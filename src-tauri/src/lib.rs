@@ -13,9 +13,20 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(Arc::new(transcription::CancelRegistry::default()))
         .setup(|app| {
-            let resource_dir = app.path().resource_dir()?;
             let app_data_dir = app.path().app_data_dir()?;
-            transcription::ensure_bundled_base_copied(&resource_dir, &app_data_dir)
+
+            // In a bundled .app, resources live under app.path().resource_dir().
+            // In `cargo run` / `tauri dev`, that returns the binary's directory
+            // (target/debug/), which doesn't contain bundle.resources. Fall back
+            // to the source tree's src-tauri/resources/ in that case.
+            let resource_dir = app.path().resource_dir()?;
+            let bundled_dir = if resource_dir.join("models").join("ggml-base.bin").is_file() {
+                resource_dir
+            } else {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")
+            };
+
+            transcription::ensure_bundled_base_copied(&bundled_dir, &app_data_dir)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             Ok(())
         })
