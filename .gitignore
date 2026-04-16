@@ -10,6 +10,9 @@ src-tauri/gen/
 src-tauri/resources/models/ggml-*.bin
 src-tauri/resources/models/ggml-*.mlmodelc/
 
+# Tauri-bundled whisper.cpp Metal shader (copied by build.rs from whisper-rs-sys)
+src-tauri/resources/ggml-metal.metal
+
 # OS
 .DS_Store
 

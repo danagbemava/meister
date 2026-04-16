@@ -22,6 +22,10 @@ fn transcribes_fixture_with_base_model() {
         return;
     };
 
+    // Tell whisper.cpp's Metal backend where to find ggml-metal.metal.
+    // build.rs copies it into resources/ from whisper-rs-sys's source.
+    std::env::set_var("GGML_METAL_PATH_RESOURCES", "resources");
+
     let progress = Arc::new(Mutex::new(Vec::<i32>::new()));
     let p = progress.clone();
 

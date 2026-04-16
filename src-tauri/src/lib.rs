@@ -26,6 +26,11 @@ pub fn run() {
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")
             };
 
+            // whisper.cpp's Metal backend looks for ggml-metal.metal here.
+            // Without this, init falls back to CoreML+CPU and the decoder
+            // loses GPU acceleration.
+            std::env::set_var("GGML_METAL_PATH_RESOURCES", &bundled_dir);
+
             transcription::ensure_bundled_base_copied(&bundled_dir, &app_data_dir)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             Ok(())
