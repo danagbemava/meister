@@ -67,6 +67,13 @@ export default function SettingsStep({ settings, onChange, onBack, onRun }: Prop
       if (dep.ollama) {
         const m = await invoke<string[]>("list_ollama_models", { ollamaUrl: settings.ollamaUrl });
         setModels(m);
+        // If the persisted model name isn't actually installed, snap to the
+        // first available one. Ollama returns tagged names like "gemma4:latest";
+        // a bare "gemma3" default doesn't match, leaving the <select> visually
+        // showing the first option while state still holds the stale value.
+        if (m.length > 0 && !m.includes(settings.model)) {
+          set("model", m[0]);
+        }
       }
 
       const infos = await invoke<ModelInfo[]>("list_available_models");
