@@ -148,6 +148,109 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
     Ok(())
 }
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+
+#[derive(Clone, Default)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    pub fn cancel(&self) { self.0.store(true, Ordering::SeqCst); }
+    pub fn is_cancelled(&self) -> bool { self.0.load(Ordering::SeqCst) }
+}
+
+pub fn new_cancel_token() -> CancelToken { CancelToken::default() }
+
+#[derive(Default)]
+pub struct CancelRegistry {
+    inner: Mutex<HashMap<String, CancelToken>>,
+}
+
+impl CancelRegistry {
+    pub fn token_for(&self, size: &str) -> CancelToken {
+        let mut g = self.inner.lock().unwrap();
+        g.entry(size.to_string()).or_default().clone()
+    }
+
+    pub fn reset(&self, size: &str) {
+        let mut g = self.inner.lock().unwrap();
+        g.insert(size.to_string(), CancelToken::default());
+    }
+}
+
+const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+
+/// Download a model's .bin and .mlmodelc.zip (streamed) into `models_dir`.
+/// `progress` is invoked with (bytes_downloaded, bytes_total_estimate).
+/// `cancel` is checked between chunks; if set, the function returns Err("cancelled").
+pub async fn download_model(
+    models_dir: &std::path::Path,
+    size: ModelSize,
+    cancel: CancelToken,
+    progress: impl Fn(u64, u64) + Send + 'static,
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use std::io::Write;
+
+    let tmp_dir = models_dir.join(".tmp").join(size.as_str());
+    let _ = std::fs::remove_dir_all(&tmp_dir); // Clean up any leftovers
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("create tmp dir: {e}"))?;
+
+    let bin_url = format!("{HF_BASE}/{}", bin_filename(size));
+    let enc_url = format!("{HF_BASE}/ggml-{}-encoder.mlmodelc.zip", size.as_str());
+
+    let staged_bin = tmp_dir.join(bin_filename(size));
+    let staged_zip = tmp_dir.join(format!("{}-encoder.mlmodelc.zip", size.as_str()));
+
+    let total_estimate = size.approx_bundle_bytes();
+    let mut downloaded: u64 = 0;
+
+    // Stream both files, sharing one running counter, into the staging dir.
+    for (url, target) in [(&bin_url, &staged_bin), (&enc_url, &staged_zip)] {
+        let resp = reqwest::Client::new().get(url).send().await
+            .map_err(|e| format!("GET {url}: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("HTTP error from {url}: {e}"))?;
+
+        let mut file = std::fs::File::create(target)
+            .map_err(|e| format!("create {}: {e}", target.display()))?;
+        let mut stream = resp.bytes_stream();
+
+        while let Some(chunk) = stream.next().await {
+            if cancel.is_cancelled() {
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                return Err("cancelled".to_string());
+            }
+            let bytes = chunk.map_err(|e| format!("download chunk: {e}"))?;
+            file.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
+            downloaded += bytes.len() as u64;
+            progress(downloaded, total_estimate);
+        }
+    }
+
+    // Unzip encoder in place
+    let zip_file = std::fs::File::open(&staged_zip).map_err(|e| format!("open zip: {e}"))?;
+    let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| format!("read zip: {e}"))?;
+    archive.extract(&tmp_dir).map_err(|e| format!("unzip: {e}"))?;
+    std::fs::remove_file(&staged_zip).ok();
+
+    // Atomic rename into final location
+    let (final_bin, final_enc) = model_paths(models_dir, size);
+    let staged_enc = tmp_dir.join(encoder_dirname(size));
+    if !staged_enc.is_dir() {
+        return Err(format!("expected encoder dir after unzip: {}", staged_enc.display()));
+    }
+    if final_bin.exists() { std::fs::remove_file(&final_bin).ok(); }
+    if final_enc.exists() { std::fs::remove_dir_all(&final_enc).ok(); }
+    std::fs::rename(&staged_bin, &final_bin).map_err(|e| format!("install bin: {e}"))?;
+    std::fs::rename(&staged_enc, &final_enc).map_err(|e| format!("install encoder: {e}"))?;
+
+    // Best-effort cleanup of the tmp staging dir
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +362,37 @@ mod tests {
 
         ensure_bundled_base_copied(resource.path(), app_data.path()).unwrap();
         assert_eq!(std::fs::read(&target_bin).unwrap(), b"existing");
+    }
+
+    #[test]
+    fn cancel_token_starts_unset() {
+        let tok = new_cancel_token();
+        assert!(!tok.is_cancelled());
+    }
+
+    #[test]
+    fn cancel_token_flips_when_cancelled() {
+        let tok = new_cancel_token();
+        let tok2 = tok.clone();
+        tok2.cancel();
+        assert!(tok.is_cancelled());
+    }
+
+    #[test]
+    fn registry_returns_same_token_per_size() {
+        let r = CancelRegistry::default();
+        let a = r.token_for("base");
+        let b = r.token_for("base");
+        b.cancel();
+        assert!(a.is_cancelled(), "tokens for the same size should share state");
+    }
+
+    #[test]
+    fn registry_separates_sizes() {
+        let r = CancelRegistry::default();
+        let a = r.token_for("base");
+        let b = r.token_for("large");
+        a.cancel();
+        assert!(!b.is_cancelled());
     }
 }

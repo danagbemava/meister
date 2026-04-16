@@ -35,3 +35,4 @@ regex = "1"
 whisper-rs = { version = "0.11", features = ["coreml", "metal"] }
 hound = "3"
 futures-util = "0.3"
+zip = "0.6"
