@@ -7,6 +7,7 @@ interface Props {
   error: string;
   transcribeProgress: number;
   onRetry: () => void;
+  modelWarming?: string | null;
 }
 
 const STAGES: Stage[] = ["extracting", "transcribing", "formatting", "saving", "done"];
@@ -35,7 +36,7 @@ function stageIndex(s: Stage) {
   return STAGES.indexOf(s);
 }
 
-export default function ProcessingStep({ logs, currentStage, error, transcribeProgress, onRetry }: Props) {
+export default function ProcessingStep({ logs, currentStage, error, transcribeProgress, onRetry, modelWarming }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -127,6 +128,11 @@ export default function ProcessingStep({ logs, currentStage, error, transcribePr
                   : `${STAGE_LABELS[currentStage]}…`}
               </span>
             </div>
+            {currentStage === "transcribing" && modelWarming && (
+              <div className="text-xs text-amber-400 mb-2">
+                Optimizing {modelWarming} model for Apple Neural Engine, ~30s, one-time…
+              </div>
+            )}
             {currentStage === "transcribing" && transcribeProgress > 0 && (
               <div className="mt-3 h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                 <div

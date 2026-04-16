@@ -65,12 +65,23 @@ export default function App() {
   const [savedPaths, setSavedPaths] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [transcribeProgress, setTranscribeProgress] = useState<number>(0);
+  const [modelWarming, setModelWarming] = useState<string | null>(null);
 
   // Listen for transcribe-progress events from the backend
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     listen<{ percent: number; message: string }>("transcribe-progress", (event) => {
       setTranscribeProgress(event.payload.percent);
+      setModelWarming(null);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  // Listen for model-warming events from the backend
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<{ size: string }>("model-warming", (event) => {
+      setModelWarming(event.payload.size);
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
@@ -89,6 +100,7 @@ export default function App() {
     setLogs([]);
     setErrorMsg("");
     setTranscribeProgress(0);
+    setModelWarming(null);
     setTranscript("");
     setFormattedOutput("");
     setSavedPaths([]);
@@ -248,6 +260,7 @@ export default function App() {
             currentStage={currentStage}
             error={errorMsg}
             transcribeProgress={transcribeProgress}
+            modelWarming={modelWarming}
             onRetry={() => {
               setStep("input");
             }}
