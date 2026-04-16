@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
-use tauri::{AppHandle, Emitter};
+use std::process::Command;
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::transcription;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DepsStatus {
     pub ffmpeg: bool,
-    pub whisper: bool,
     pub ollama: bool,
 }
 
@@ -36,20 +36,13 @@ struct OllamaGenerateResponse {
 
 // ── Dependency Check ───────────────────────────────────────────────────────────
 
-/// Check that ffmpeg, whisper, and Ollama are available on the system.
+/// Check that ffmpeg and Ollama are available on the system.
 #[tauri::command]
 pub async fn check_dependencies(ollama_url: String) -> Result<DepsStatus, String> {
     let ffmpeg = Command::new("ffmpeg")
         .arg("-version")
         .output()
         .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    // whisper can be invoked as `whisper` (openai-whisper) or `whisper-cpp`
-    let whisper = Command::new("whisper")
-        .arg("--help")
-        .output()
-        .map(|_| true)
         .unwrap_or(false);
 
     let ollama = reqwest::Client::new()
@@ -60,7 +53,7 @@ pub async fn check_dependencies(ollama_url: String) -> Result<DepsStatus, String
         .map(|r| r.status().is_success())
         .unwrap_or(false);
 
-    Ok(DepsStatus { ffmpeg, whisper, ollama })
+    Ok(DepsStatus { ffmpeg, ollama })
 }
 
 /// Return the list of locally available Ollama models.
@@ -121,9 +114,17 @@ pub async fn extract_audio(
 
 // ── Transcription ──────────────────────────────────────────────────────────────
 
-/// Run openai-whisper on the WAV file and return the raw transcript text.
-/// Streams progress events (`transcribe-progress`) to the frontend as Whisper
-/// processes each audio chunk.
+#[derive(Clone, serde::Serialize)]
+struct TranscribeProgress {
+    percent: u32,
+    message: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ModelWarming {
+    size: String,
+}
+
 #[tauri::command]
 pub async fn transcribe_audio(
     app: AppHandle,
@@ -131,194 +132,43 @@ pub async fn transcribe_audio(
     whisper_model: String,
     language: String,
 ) -> Result<String, String> {
-    // Output goes to a temp folder we control.
-    let out_dir = std::env::temp_dir().join("meister_whisper");
-    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    let size = transcription::ModelSize::from_str(&whisper_model)
+        .ok_or_else(|| format!("unknown model size: {whisper_model}"))?;
 
-    let mut cmd = Command::new("whisper");
-    // Force Python to flush stdout/stderr immediately so we get real-time output.
-    // Without this, Python block-buffers stdout when piped (no TTY).
-    cmd.env("PYTHONUNBUFFERED", "1");
-    cmd.args([
-        &wav_path,
-        "--model", &whisper_model,
-        "--output_format", "txt",
-        "--output_dir", out_dir.to_str().unwrap(),
-        // Verbose mode prints timestamps for each segment, which we parse for progress.
-        "--verbose", "True",
-    ]);
-    if !language.is_empty() && language != "auto" {
-        cmd.args(["--language", &language]);
+    let models_dir = app.path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?
+        .join("models");
+
+    if transcription::is_warming(size) {
+        let _ = app.emit("model-warming", ModelWarming { size: whisper_model.clone() });
     }
 
-    // Spawn the process so we can stream stdout + stderr in real time.
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("whisper not found: {e}. Install via: pip install openai-whisper"))?;
+    let app_for_cb = app.clone();
+    let wav_path_buf = std::path::PathBuf::from(&wav_path);
+    let lang = if language.is_empty() || language == "auto" { None } else { Some(language) };
 
-    let stderr = child.stderr.take().expect("stderr was piped");
-    let stdout = child.stdout.take().expect("stdout was piped");
+    let result = tokio::task::spawn_blocking(move || {
+        transcription::transcribe_wav_with_callback(
+            &models_dir,
+            size,
+            &wav_path_buf,
+            lang.as_deref(),
+            move |pct| {
+                let _ = app_for_cb.emit("transcribe-progress", TranscribeProgress {
+                    percent: pct.clamp(0, 100) as u32,
+                    message: format!("Transcribing… {pct}%"),
+                });
+            },
+        )
+    }).await.map_err(|e| format!("task join: {e}"))?;
 
-    let re_timestamp = regex::Regex::new(
-        r"\[(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2})\.(\d{3})\]"
-    ).unwrap();
-    let re_percent = regex::Regex::new(r"(\d+)%\|").unwrap();
-
-    let audio_duration_ms = get_wav_duration_ms();
-
-    // Read stdout in a thread — whisper --verbose True prints timestamp lines here.
-    let app_stdout = app.clone();
-    let re_ts = re_timestamp.clone();
-    let stdout_handle = std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().flatten() {
-            if let Some(caps) = re_ts.captures(&line) {
-                let end_min: u64 = caps[4].parse().unwrap_or(0);
-                let end_sec: u64 = caps[5].parse().unwrap_or(0);
-                let end_ms: u64 = caps[6].parse().unwrap_or(0);
-                let end_total_ms = end_min * 60_000 + end_sec * 1_000 + end_ms;
-
-                if let Some(total) = audio_duration_ms {
-                    if total > 0 {
-                        let pct = ((end_total_ms as f64 / total as f64) * 100.0)
-                            .min(99.0) as u32;
-                        let _ = app_stdout.emit("transcribe-progress", TranscribeProgress {
-                            percent: pct,
-                            message: format!("Transcribing… {pct}%"),
-                        });
-                    }
-                }
-            }
-        }
-    });
-
-    // Read stderr byte-by-byte — tqdm uses \r to overwrite progress in-place,
-    // so we split on both \r and \n to catch each update.
-    let app_stderr = app.clone();
-    let stderr_handle = std::thread::spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut collected = String::new();
-        let mut buf = [0u8; 1];
-        let mut line = String::new();
-
-        loop {
-            match std::io::Read::read(&mut reader, &mut buf) {
-                Ok(0) => break, // EOF
-                Ok(_) => {
-                    let ch = buf[0] as char;
-                    if ch == '\r' || ch == '\n' {
-                        if !line.is_empty() {
-                            // Check for tqdm percentage
-                            if let Some(caps) = re_percent.captures(&line) {
-                                if let Ok(pct) = caps[1].parse::<u32>() {
-                                    let _ = app_stderr.emit("transcribe-progress", TranscribeProgress {
-                                        percent: pct,
-                                        message: format!("Processing audio… {pct}%"),
-                                    });
-                                }
-                            }
-                            // Also check for timestamps in stderr (some whisper versions)
-                            if let Some(caps) = re_timestamp.captures(&line) {
-                                let end_min: u64 = caps[4].parse().unwrap_or(0);
-                                let end_sec: u64 = caps[5].parse().unwrap_or(0);
-                                let end_ms: u64 = caps[6].parse().unwrap_or(0);
-                                let end_total_ms = end_min * 60_000 + end_sec * 1_000 + end_ms;
-                                if let Some(total) = audio_duration_ms {
-                                    if total > 0 {
-                                        let pct = ((end_total_ms as f64 / total as f64) * 100.0)
-                                            .min(99.0) as u32;
-                                        let _ = app_stderr.emit("transcribe-progress", TranscribeProgress {
-                                            percent: pct,
-                                            message: format!("Transcribing… {pct}%"),
-                                        });
-                                    }
-                                }
-                            }
-                            collected.push_str(&line);
-                            collected.push('\n');
-                            line.clear();
-                        }
-                    } else {
-                        line.push(ch);
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-
-        collected
-    });
-
-    // Use spawn_blocking so we don't block the Tokio async runtime.
-    let (status, stderr_output) = tokio::task::spawn_blocking(move || {
-        let status = child.wait();
-        let _ = stdout_handle.join();
-        let stderr_output = stderr_handle.join().unwrap_or_default();
-        (status, stderr_output)
-    })
-    .await
-    .map_err(|e| format!("task join error: {e}"))?;
-
-    let status = status.map_err(|e| format!("whisper process error: {e}"))?;
-
-    // Emit 100% on completion
     let _ = app.emit("transcribe-progress", TranscribeProgress {
         percent: 100,
         message: "Transcription complete.".to_string(),
     });
 
-    if !status.success() {
-        return Err(format!("Whisper error:\n{stderr_output}"));
-    }
-
-    // Whisper names the output file after the input file, with .txt extension.
-    let stem = std::path::Path::new(&wav_path)
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
-    let txt_path = out_dir.join(format!("{stem}.txt"));
-
-    if !txt_path.exists() {
-        let mut found = None;
-        for entry in std::fs::read_dir(&out_dir).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            if entry.path().extension().map_or(false, |x| x == "txt") {
-                found = Some(entry.path());
-                break;
-            }
-        }
-        match found {
-            Some(p) => return std::fs::read_to_string(p).map_err(|e| e.to_string()),
-            None => return Err("Whisper finished but no .txt transcript was found.".to_string()),
-        }
-    }
-
-    std::fs::read_to_string(&txt_path).map_err(|e| e.to_string())
-}
-
-#[derive(Clone, Serialize)]
-struct TranscribeProgress {
-    percent: u32,
-    message: String,
-}
-
-/// Try to get the duration of the meister temp WAV by reading the RIFF header.
-fn get_wav_duration_ms() -> Option<u64> {
-    let path = std::env::temp_dir().join("meister_audio.wav");
-    let data = std::fs::read(&path).ok()?;
-    // WAV header: bytes 24-27 = sample rate (u32 LE), bytes 34-35 = bits per sample (u16 LE)
-    // Total data size is file size minus 44 bytes of header (standard PCM WAV).
-    if data.len() < 44 { return None; }
-    let sample_rate = u32::from_le_bytes(data[24..28].try_into().ok()?) as u64;
-    let bits_per_sample = u16::from_le_bytes(data[34..36].try_into().ok()?) as u64;
-    let channels = u16::from_le_bytes(data[22..24].try_into().ok()?) as u64;
-    if sample_rate == 0 || bits_per_sample == 0 || channels == 0 { return None; }
-    let data_size = (data.len() as u64).saturating_sub(44);
-    let bytes_per_sample = bits_per_sample / 8;
-    let total_samples = data_size / (bytes_per_sample * channels);
-    Some(total_samples * 1000 / sample_rate)
+    result
 }
 
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
