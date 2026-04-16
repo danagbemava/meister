@@ -1,6 +1,6 @@
 # Meister — Setup Guide
 
-Meister is a macOS desktop app that takes a recording (video or audio), extracts its audio, transcribes it with Whisper, then uses a local Ollama model (e.g. Gemma) to format the transcript into structured minutes — in whatever format you supply as a template.
+Meister is a macOS desktop app that takes a recording (video or audio), extracts its audio, transcribes it on-device with whisper.cpp (Metal + Apple Neural Engine), then uses a local Ollama model (e.g. Gemma) to format the transcript into structured minutes — in whatever format you supply as a template.
 
 ---
 
@@ -28,28 +28,15 @@ brew install node
 brew install ffmpeg
 ```
 
-### 4. uv (Python package manager)
+### 4. cmake
 
 ```bash
-brew install uv
+brew install cmake
 ```
 
-### 5. Whisper — installed as a uv tool
+Required by whisper-rs to compile whisper.cpp from source.
 
-```bash
-uv tool install openai-whisper
-```
-
-That's it. `uv tool` manages the isolation internally and puts the `whisper` binary in `~/.local/bin`, which is already on your PATH. No venv to activate, no PATH changes needed.
-
-```bash
-# Verify
-whisper --help
-```
-
-Whisper downloads model weights on first use. The `base` model (~145 MB) is the default and works well for most recordings.
-
-### 6. Ollama + Gemma
+### 5. Ollama + Gemma
 
 ```bash
 # Install Ollama
@@ -61,6 +48,12 @@ ollama pull gemma3
 # Start Ollama (keep it running in the background)
 ollama serve
 ```
+
+---
+
+## Running from Source
+
+> First-time `cargo build` downloads ~220 MB of whisper.cpp model weights into `src-tauri/resources/models/`.
 
 ---
 
@@ -93,7 +86,7 @@ The `.app` bundle will be in `src-tauri/target/release/bundle/macos/`.
 3. **Configure** — choose your Whisper model size, Ollama model, and which output formats to produce (md, txt, docx, pdf).
 4. **Run** — Meister will:
    - Extract audio via `ffmpeg`
-   - Transcribe with `whisper`
+   - Transcribe via whisper.cpp (on-device, Metal + Apple Neural Engine)
    - Format via Ollama / Gemma
    - Prompt you to save each requested output file
 5. **Results** — preview the formatted output and raw transcript in-app.
@@ -133,7 +126,6 @@ The `.app` bundle will be in `src-tauri/target/release/bundle/macos/`.
 
 ## Tips
 
-- **Whisper model sizes**: `tiny` is fastest (lower accuracy), `large` is most accurate (slowest). `base` or `small` covers most cases well.
-- **Long recordings**: Whisper takes roughly 10–30% of the recording's duration on CPU. `medium`/`large` models need more time.
+- **Transcription model**: the bundled `base` works well for most recordings. Larger models can be downloaded in Settings (one-time download per size).
+- **Long recordings**: Transcription takes roughly 10–30% of the recording's duration on CPU. Larger models need more time.
 - **Template quality**: the more explicit your template — section headers, placeholder text, examples — the more closely Gemma will follow it.
-- **Updating Whisper**: `uv tool upgrade openai-whisper`
