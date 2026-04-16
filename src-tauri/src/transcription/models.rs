@@ -60,6 +60,94 @@ pub fn model_paths(models_dir: &std::path::Path, size: ModelSize) -> (PathBuf, P
     )
 }
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub size: String,
+    pub downloaded: bool,
+    pub size_bytes: u64,
+}
+
+const ALL_SIZES: [ModelSize; 5] = [
+    ModelSize::Tiny,
+    ModelSize::Base,
+    ModelSize::Small,
+    ModelSize::Medium,
+    ModelSize::Large,
+];
+
+pub fn list_available_models(models_dir: &std::path::Path) -> Vec<ModelInfo> {
+    ALL_SIZES.iter().map(|&size| {
+        let (bin, enc) = model_paths(models_dir, size);
+        let downloaded = bin.is_file() && enc.is_dir();
+        let size_bytes = if downloaded {
+            std::fs::metadata(&bin).map(|m| m.len()).unwrap_or(0)
+                + dir_size(&enc).unwrap_or(0)
+        } else {
+            size.approx_bundle_bytes()
+        };
+        ModelInfo { size: size.as_str().to_string(), downloaded, size_bytes }
+    }).collect()
+}
+
+fn dir_size(path: &std::path::Path) -> std::io::Result<u64> {
+    let mut total = 0u64;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        total += if meta.is_dir() { dir_size(&entry.path()).unwrap_or(0) } else { meta.len() };
+    }
+    Ok(total)
+}
+
+/// Copy the bundled base model from `<resource_dir>/models/` into
+/// `<app_data_dir>/models/` if not already present. Idempotent.
+pub fn ensure_bundled_base_copied(
+    resource_dir: &std::path::Path,
+    app_data_dir: &std::path::Path,
+) -> Result<(), String> {
+    let target_dir = app_data_dir.join("models");
+    std::fs::create_dir_all(&target_dir).map_err(|e| format!("create models dir: {e}"))?;
+
+    let (target_bin, target_enc) = model_paths(&target_dir, ModelSize::Base);
+    if target_bin.is_file() && target_enc.is_dir() {
+        return Ok(());
+    }
+
+    let bundled_dir = resource_dir.join("models");
+    let (src_bin, src_enc) = model_paths(&bundled_dir, ModelSize::Base);
+
+    if !src_bin.is_file() {
+        return Err(format!("bundled base model not found at {}", src_bin.display()));
+    }
+
+    if !target_bin.exists() {
+        std::fs::copy(&src_bin, &target_bin)
+            .map_err(|e| format!("copy bin: {e}"))?;
+    }
+    if !target_enc.exists() {
+        copy_dir_recursive(&src_enc, &target_enc)
+            .map_err(|e| format!("copy encoder: {e}"))?;
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let target = dst.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &target)?;
+        } else {
+            std::fs::copy(&path, &target)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +181,83 @@ mod tests {
         for w in sizes.windows(2) {
             assert!(w[0].approx_bundle_bytes() < w[1].approx_bundle_bytes());
         }
+    }
+
+    #[test]
+    fn lists_no_models_in_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let infos = list_available_models(tmp.path());
+        assert_eq!(infos.len(), 5);
+        assert!(infos.iter().all(|i| !i.downloaded));
+    }
+
+    #[test]
+    fn detects_base_when_both_files_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (bin, enc) = model_paths(tmp.path(), ModelSize::Base);
+        std::fs::write(&bin, b"fake-bin-bytes").unwrap();
+        std::fs::create_dir_all(&enc).unwrap();
+        std::fs::write(enc.join("model.mlmodel"), b"fake").unwrap();
+
+        let infos = list_available_models(tmp.path());
+        let base = infos.iter().find(|i| i.size == "base").unwrap();
+        assert!(base.downloaded);
+        assert!(base.size_bytes > 0);
+    }
+
+    #[test]
+    fn missing_encoder_means_not_downloaded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (bin, _enc) = model_paths(tmp.path(), ModelSize::Base);
+        std::fs::write(&bin, b"only-bin").unwrap();
+        let infos = list_available_models(tmp.path());
+        let base = infos.iter().find(|i| i.size == "base").unwrap();
+        assert!(!base.downloaded, "model should be incomplete without encoder");
+    }
+
+    #[test]
+    fn ensure_bundled_copies_when_missing() {
+        let resource = tempfile::tempdir().unwrap();
+        let app_data = tempfile::tempdir().unwrap();
+
+        // Fake "bundled" base model under resource_dir/models/
+        let bundled_models = resource.path().join("models");
+        std::fs::create_dir_all(&bundled_models).unwrap();
+        let (bin, enc) = model_paths(&bundled_models, ModelSize::Base);
+        std::fs::write(&bin, b"bundled-bin").unwrap();
+        std::fs::create_dir_all(&enc).unwrap();
+        std::fs::write(enc.join("file"), b"x").unwrap();
+
+        ensure_bundled_base_copied(resource.path(), app_data.path()).unwrap();
+
+        let (target_bin, target_enc) = model_paths(&app_data.path().join("models"), ModelSize::Base);
+        assert!(target_bin.exists());
+        assert!(target_enc.is_dir());
+        assert_eq!(std::fs::read(&target_bin).unwrap(), b"bundled-bin");
+    }
+
+    #[test]
+    fn ensure_bundled_skips_when_already_present() {
+        let resource = tempfile::tempdir().unwrap();
+        let app_data = tempfile::tempdir().unwrap();
+        let bundled = resource.path().join("models");
+        std::fs::create_dir_all(&bundled).unwrap();
+
+        // Pre-existing model in app_data
+        let target_dir = app_data.path().join("models");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        let (target_bin, target_enc) = model_paths(&target_dir, ModelSize::Base);
+        std::fs::write(&target_bin, b"existing").unwrap();
+        std::fs::create_dir_all(&target_enc).unwrap();
+        std::fs::write(target_enc.join("file"), b"x").unwrap();
+
+        // Bundled model has different content; ensure we don't overwrite
+        let (bin, enc) = model_paths(&bundled, ModelSize::Base);
+        std::fs::write(&bin, b"different").unwrap();
+        std::fs::create_dir_all(&enc).unwrap();
+        std::fs::write(enc.join("file"), b"y").unwrap();
+
+        ensure_bundled_base_copied(resource.path(), app_data.path()).unwrap();
+        assert_eq!(std::fs::read(&target_bin).unwrap(), b"existing");
     }
 }
