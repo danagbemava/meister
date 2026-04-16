@@ -1,5 +1,8 @@
-// macOS-style title bar — all children use pointer-events-none so
-// clicks fall through to the data-tauri-drag-region container.
+// macOS-style title bar. Every child also has data-tauri-drag-region so
+// the webview's drag hit-test resolves to a draggable element regardless
+// of where the user clicks within the strip. Using pointer-events-none
+// on children doesn't reliably fall through on macOS, so each child opts
+// in explicitly instead.
 export default function TitleBar() {
   return (
     <div
@@ -7,11 +10,14 @@ export default function TitleBar() {
       className="h-11 flex items-center px-4 select-none shrink-0"
     >
       {/* Leave space for native traffic lights on macOS */}
-      <div className="w-16 pointer-events-none" />
-      <span className="flex-1 text-center text-sm font-medium text-white/50 tracking-wide pointer-events-none">
+      <div data-tauri-drag-region className="w-16" />
+      <span
+        data-tauri-drag-region
+        className="flex-1 text-center text-sm font-medium text-white/50 tracking-wide"
+      >
         Meister
       </span>
-      <div className="w-16 pointer-events-none" />
+      <div data-tauri-drag-region className="w-16" />
     </div>
   );
 }

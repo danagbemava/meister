@@ -319,8 +319,12 @@ async function generateDocx(markdown: string): Promise<Uint8Array> {
   });
 
   const doc = new Document({ sections: [{ properties: {}, children }] });
-  const buffer = await Packer.toBuffer(doc);
-  return new Uint8Array(buffer);
+  // Packer.toBuffer() relies on Node's Buffer (and JSZip's "nodebuffer"
+  // output type), which doesn't exist in the webview. toBlob() works
+  // everywhere — convert to bytes via ArrayBuffer.
+  const blob = await Packer.toBlob(doc);
+  const ab = await blob.arrayBuffer();
+  return new Uint8Array(ab);
 }
 
 async function generatePdf(markdown: string): Promise<Uint8Array> {
