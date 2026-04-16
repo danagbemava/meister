@@ -8,6 +8,7 @@ interface Props {
   transcribeProgress: number;
   onRetry: () => void;
   modelWarming?: string | null;
+  formatProgress?: number;
 }
 
 const STAGES: Stage[] = ["extracting", "transcribing", "formatting", "saving", "done"];
@@ -36,7 +37,7 @@ function stageIndex(s: Stage) {
   return STAGES.indexOf(s);
 }
 
-export default function ProcessingStep({ logs, currentStage, error, transcribeProgress, onRetry, modelWarming }: Props) {
+export default function ProcessingStep({ logs, currentStage, error, transcribeProgress, onRetry, modelWarming, formatProgress = 0 }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -125,6 +126,8 @@ export default function ProcessingStep({ logs, currentStage, error, transcribePr
               <span>
                 {currentStage === "transcribing" && transcribeProgress > 0
                   ? `Transcribing… ${transcribeProgress}%`
+                  : currentStage === "formatting" && formatProgress > 0
+                  ? `Formatting… ${formatProgress.toLocaleString()} chars`
                   : `${STAGE_LABELS[currentStage]}…`}
               </span>
             </div>

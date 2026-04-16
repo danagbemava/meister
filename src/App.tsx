@@ -66,6 +66,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [transcribeProgress, setTranscribeProgress] = useState<number>(0);
   const [modelWarming, setModelWarming] = useState<string | null>(null);
+  const [formatProgress, setFormatProgress] = useState<number>(0);
 
   // Listen for transcribe-progress events from the backend
   useEffect(() => {
@@ -86,6 +87,15 @@ export default function App() {
     return () => { unlisten?.(); };
   }, []);
 
+  // Listen for format-progress events from Ollama streaming
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<{ chars: number; done: boolean }>("format-progress", (event) => {
+      setFormatProgress(event.payload.chars);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
   const addLog = useCallback((stage: Stage, message: string) => {
     setLogs((prev) => [...prev, { stage, message, ts: Date.now() }]);
     setCurrentStage(stage);
@@ -101,6 +111,7 @@ export default function App() {
     setErrorMsg("");
     setTranscribeProgress(0);
     setModelWarming(null);
+    setFormatProgress(0);
     setTranscript("");
     setFormattedOutput("");
     setSavedPaths([]);
@@ -261,6 +272,7 @@ export default function App() {
             error={errorMsg}
             transcribeProgress={transcribeProgress}
             modelWarming={modelWarming}
+            formatProgress={formatProgress}
             onRetry={() => {
               setStep("input");
             }}

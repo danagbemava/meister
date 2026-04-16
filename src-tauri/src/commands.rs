@@ -30,11 +30,6 @@ struct OllamaGenerateRequest {
     stream: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct OllamaGenerateResponse {
-    response: String,
-}
-
 // ── Dependency Check ───────────────────────────────────────────────────────────
 
 /// Check that ffmpeg and Ollama are available on the system.
@@ -174,27 +169,39 @@ pub async fn transcribe_audio(
 
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
-/// Send the transcript + template to an Ollama model and return the formatted output.
+#[derive(Clone, serde::Serialize)]
+struct FormatProgress {
+    chars: usize,
+    done: bool,
+}
+
+/// Send the transcript + template to an Ollama model. Streams the response and
+/// emits `format-progress` events with the running character count so the UI
+/// can show live progress instead of a frozen spinner. Returns the full text
+/// once the stream ends.
 #[tauri::command]
 pub async fn format_transcript(
+    app: AppHandle,
     transcript: String,
     template_content: String,
     ollama_url: String,
     model: String,
 ) -> Result<String, String> {
+    use futures_util::StreamExt;
+
     let prompt = build_prompt(&transcript, &template_content);
 
     let client = reqwest::Client::new();
     let body = OllamaGenerateRequest {
         model: model.clone(),
         prompt,
-        stream: false,
+        stream: true,
     };
 
     let resp = client
         .post(format!("{}/api/generate", ollama_url))
         .json(&body)
-        .timeout(std::time::Duration::from_secs(300))
+        .timeout(std::time::Duration::from_secs(600))
         .send()
         .await
         .map_err(|e| format!("Cannot reach Ollama at {ollama_url}: {e}"))?;
@@ -205,12 +212,44 @@ pub async fn format_transcript(
         return Err(format!("Ollama returned {status}: {text}"));
     }
 
-    let result: OllamaGenerateResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Ollama response: {e}"))?;
+    // Ollama streams newline-delimited JSON: one object per generated chunk,
+    // with `response` (the new tokens) and `done` (true on final).
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    let mut accumulated = String::new();
 
-    Ok(result.response)
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Ollama stream error: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = buf.find('\n') {
+            let line = buf[..nl].to_string();
+            buf.drain(..=nl);
+            if line.trim().is_empty() { continue; }
+
+            let obj: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue, // partial chunk; drop and keep streaming
+            };
+
+            if let Some(piece) = obj.get("response").and_then(|v| v.as_str()) {
+                accumulated.push_str(piece);
+                let _ = app.emit("format-progress", FormatProgress {
+                    chars: accumulated.chars().count(),
+                    done: false,
+                });
+            }
+
+            if obj.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
+                let _ = app.emit("format-progress", FormatProgress {
+                    chars: accumulated.chars().count(),
+                    done: true,
+                });
+            }
+        }
+    }
+
+    Ok(accumulated)
 }
 
 fn build_prompt(transcript: &str, template: &str) -> String {
