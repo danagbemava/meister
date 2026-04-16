@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Tauri-bundled model files (downloaded by build script, not source)
+src-tauri/resources/models/ggml-*.bin
+src-tauri/resources/models/ggml-*.mlmodelc/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local Claude Code settings (per-machine)
+.claude/settings.local.json
