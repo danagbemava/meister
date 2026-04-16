@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  @apply bg-surface text-white;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Scrollable text areas */
+textarea,
+.scrollable {
+  user-select: text;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #48484a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #636366;
+}
+
+/* Drop zone animation */
+@keyframes pulse-border {
+  0%, 100% { border-color: #0a84ff; opacity: 0.6; }
+  50% { border-color: #409cff; opacity: 1; }
+}
+
+.drop-active {
+  animation: pulse-border 1s ease-in-out infinite;
+}
+
+/* Stage indicator */
+.stage-dot {
+  @apply w-2 h-2 rounded-full;
+}
+.stage-dot.done    { @apply bg-green-500; }
+.stage-dot.active  { @apply bg-accent; }
+.stage-dot.pending { @apply bg-surface-tertiary; }
+
+/* Form inputs */
+.input {
+  @apply w-full bg-surface-secondary border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none
+         focus:ring-1 focus:ring-accent/50 focus:border-accent/40 transition-colors;
+}
+
+select.input option {
+  background: #2c2c2e;
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: #0a84ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}

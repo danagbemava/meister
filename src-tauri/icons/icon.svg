@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6C3CE1"/>
+      <stop offset="100%" style="stop-color:#E13CA0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="200" fill="url(#bg)"/>
+  <!-- Double music note -->
+  <g transform="translate(250, 180)" fill="white">
+    <!-- Left note stem -->
+    <rect x="80" y="0" width="36" height="480" rx="8"/>
+    <!-- Right note stem -->
+    <rect x="408" y="40" width="36" height="440" rx="8"/>
+    <!-- Beam connecting stems -->
+    <rect x="80" y="0" width="364" height="50" rx="10" transform="rotate(5, 80, 0)"/>
+    <!-- Second beam -->
+    <rect x="80" y="70" width="364" height="50" rx="10" transform="rotate(5, 80, 70)"/>
+    <!-- Left note head -->
+    <ellipse cx="50" cy="500" rx="90" ry="70" transform="rotate(-20, 50, 500)"/>
+    <!-- Right note head -->
+    <ellipse cx="378" cy="500" rx="90" ry="70" transform="rotate(-20, 378, 500)"/>
+  </g>
+</svg>
