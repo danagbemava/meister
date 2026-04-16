@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::transcription;
@@ -265,5 +266,68 @@ pub async fn cleanup_temp() -> Result<(), String> {
     let whisper_dir = std::env::temp_dir().join("meister_whisper");
     let _ = std::fs::remove_file(wav);
     let _ = std::fs::remove_dir_all(whisper_dir);
+    Ok(())
+}
+
+// ── Model management ───────────────────────────────────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+struct ModelDownloadProgress {
+    size: String,
+    bytes_downloaded: u64,
+    bytes_total: u64,
+}
+
+#[tauri::command]
+pub async fn list_available_models(
+    app: AppHandle,
+) -> Result<Vec<transcription::ModelInfo>, String> {
+    let models_dir = app.path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?
+        .join("models");
+    Ok(transcription::list_available_models(&models_dir))
+}
+
+#[tauri::command]
+pub async fn download_model(
+    app: AppHandle,
+    size: String,
+) -> Result<(), String> {
+    let model_size = transcription::ModelSize::from_str(&size)
+        .ok_or_else(|| format!("unknown model size: {size}"))?;
+
+    let models_dir = app.path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?
+        .join("models");
+
+    let registry = app.state::<Arc<transcription::CancelRegistry>>();
+    registry.reset(&size);
+    let token = registry.token_for(&size);
+
+    let app_for_cb = app.clone();
+    let size_for_cb = size.clone();
+    transcription::download_model(
+        &models_dir,
+        model_size,
+        token,
+        move |bytes_downloaded, bytes_total| {
+            let _ = app_for_cb.emit("model-download-progress", ModelDownloadProgress {
+                size: size_for_cb.clone(),
+                bytes_downloaded,
+                bytes_total,
+            });
+        },
+    ).await
+}
+
+#[tauri::command]
+pub fn cancel_model_download(
+    app: AppHandle,
+    size: String,
+) -> Result<(), String> {
+    let registry = app.state::<Arc<transcription::CancelRegistry>>();
+    registry.token_for(&size).cancel();
     Ok(())
 }
