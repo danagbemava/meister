@@ -7,6 +7,7 @@
 pub mod schema;
 pub mod types;
 pub mod projects;
+pub mod recordings;
 
 pub use types::*;
 
