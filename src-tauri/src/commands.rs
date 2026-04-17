@@ -318,16 +318,6 @@ pub async fn read_file_as_text(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("Failed to read {path}: {e}"))
 }
 
-/// Clean up temp files created during processing.
-#[tauri::command]
-pub async fn cleanup_temp() -> Result<(), String> {
-    let wav = std::env::temp_dir().join("meister_audio.wav");
-    let whisper_dir = std::env::temp_dir().join("meister_whisper");
-    let _ = std::fs::remove_file(wav);
-    let _ = std::fs::remove_dir_all(whisper_dir);
-    Ok(())
-}
-
 // ── Model management ───────────────────────────────────────────────────────────
 
 #[derive(Clone, serde::Serialize)]

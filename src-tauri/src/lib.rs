@@ -59,7 +59,6 @@ pub fn run() {
             commands::save_text_file,
             commands::save_binary_file,
             commands::read_file_as_text,
-            commands::cleanup_temp,
             commands::list_available_models,
             commands::download_model,
             commands::cancel_model_download,
