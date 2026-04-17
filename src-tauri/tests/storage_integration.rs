@@ -1,5 +1,6 @@
 //! End-to-end tests for the storage module against an in-memory SQLite DB.
 
+use meister_lib::orchestrator;
 use meister_lib::storage::{
     self, AppSettings, OutputFormat, Project, Store, Template, TemplateSource,
 };
@@ -213,4 +214,55 @@ fn mark_running_as_failed_sweeps_interrupted_rows() {
     let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
     assert_eq!(rec.stages[1].status, StageStatus::Failed);
     assert_eq!(rec.stages[1].error.as_deref(), Some("crashed"));
+}
+
+#[test]
+fn invalidating_transcribe_resets_format_and_save() {
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+    storage::recordings::insert(&store, &sample_recording("p1")).unwrap();
+
+    // All four stages "complete" at once (fake data).
+    for kind in StageKind::ALL {
+        let model_used = match kind {
+            StageKind::Transcribe => Some("base@en".to_string()),
+            StageKind::Format => Some("gemma3".to_string()),
+            _ => None,
+        };
+        let template_hash = match kind {
+            StageKind::Format => Some(storage::template_hash("# Minutes\n")),
+            _ => None,
+        };
+        storage::stages::set_completed(
+            &store, "r1", kind,
+            storage::stages::CompletedOutput {
+                output: Some("x".to_string()),
+                model_used,
+                template_hash,
+                saved_paths: if kind == StageKind::Save { Some(vec![]) } else { None },
+                completed_at: 1,
+            },
+        ).unwrap();
+    }
+
+    // Simulate the orchestrator visiting the Transcribe stage with a changed setting:
+    // user swapped whisper model from base→small. inputs_unchanged returns false,
+    // so reset_from is called.
+    let mut rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    rec.settings.whisper_model = "small".to_string();
+
+    let transcribe = rec.stages.iter().find(|s| s.stage == StageKind::Transcribe).unwrap();
+    let template_hash = storage::template_hash("# Minutes\n");
+    let valid = orchestrator::inputs_unchanged(
+        StageKind::Transcribe, transcribe, &rec.settings,
+        &template_hash, &rec.source_path, true,
+    );
+    assert!(!valid);
+
+    storage::stages::reset_from(&store, "r1", StageKind::Transcribe).unwrap();
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(rec.stages[0].status, StageStatus::Completed); // extract kept
+    assert_eq!(rec.stages[1].status, StageStatus::Pending);   // transcribe reset
+    assert_eq!(rec.stages[2].status, StageStatus::Pending);   // format reset
+    assert_eq!(rec.stages[3].status, StageStatus::Pending);   // save reset
 }
