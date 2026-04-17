@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog, open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
@@ -41,7 +41,6 @@ export default function RecordingView({
 
   const locateSource = async () => {
     if (!rec) return;
-    const { open } = await import("@tauri-apps/plugin-dialog");
     const path = await open({ multiple: false });
     if (typeof path === "string") {
       const next = { ...rec, sourcePath: path };
