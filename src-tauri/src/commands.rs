@@ -587,3 +587,39 @@ pub async fn start_over_recording(
     let _ = std::fs::remove_file(dir.join("audio.wav"));
     Ok(())
 }
+
+// ── Save helpers ───────────────────────────────────────────────────────────
+
+/// Placeholder helper kept so the orchestrator has a symbol to import — the
+/// actual save step runs on the React side via file dialogs. No-op.
+pub async fn run_save_outputs() -> Result<(), String> {
+    Ok(())
+}
+
+/// Called by the UI after the user finishes picking save paths and writing
+/// the output files. Appends to the save stage's saved_paths and marks it
+/// completed.
+#[tauri::command]
+pub async fn record_saved_outputs(
+    store: tauri::State<'_, Arc<Store>>,
+    recording_id: String,
+    saved_paths: Vec<String>,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || {
+        storage::stages::set_completed(
+            &store,
+            &recording_id,
+            storage::StageKind::Save,
+            storage::stages::CompletedOutput {
+                output: None,
+                model_used: None,
+                template_hash: None,
+                saved_paths: Some(saved_paths),
+                completed_at: now_ms(),
+            },
+        )
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}

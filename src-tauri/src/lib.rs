@@ -73,6 +73,7 @@ pub fn run() {
             commands::update_recording,
             commands::delete_recording,
             commands::start_over_recording,
+            commands::record_saved_outputs,
             orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())
