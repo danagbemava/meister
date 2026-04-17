@@ -266,3 +266,106 @@ fn invalidating_transcribe_resets_format_and_save() {
     assert_eq!(rec.stages[2].status, StageStatus::Pending);   // format reset
     assert_eq!(rec.stages[3].status, StageStatus::Pending);   // save reset
 }
+
+#[test]
+fn migrates_v1_to_v2_wraps_source_path_into_array() {
+    use rusqlite::Connection;
+
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+    // Seed a v1-shaped DB manually (pre-migration schema).
+    conn.execute_batch(
+        r#"
+        CREATE TABLE projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            template_source TEXT NOT NULL,
+            template_content TEXT NOT NULL,
+            template_source_path TEXT,
+            default_settings TEXT NOT NULL
+        );
+        CREATE TABLE recordings (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            settings TEXT NOT NULL
+        );
+        CREATE TABLE stages (
+            recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+            stage TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error TEXT,
+            completed_at INTEGER,
+            model_used TEXT,
+            template_hash TEXT,
+            output TEXT,
+            saved_paths TEXT,
+            PRIMARY KEY (recording_id, stage)
+        );
+        PRAGMA user_version = 1;
+        "#,
+    )
+    .unwrap();
+
+    let settings_json = serde_json::to_string(&default_settings()).unwrap();
+    conn.execute(
+        "INSERT INTO projects (id, name, created_at, updated_at, template_source, template_content, default_settings) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params!["p1", "proj", 1i64, 1i64, "inline", "", &settings_json],
+    ).unwrap();
+    conn.execute(
+        "INSERT INTO recordings (id, project_id, name, source_path, created_at, updated_at, settings) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params!["r1", "p1", "rec", "/x.mp4", 2i64, 2i64, &settings_json],
+    ).unwrap();
+
+    meister_lib::storage::schema::migrate(&conn).unwrap();
+
+    // user_version bumped.
+    let v: i32 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(v, 2);
+
+    // source_paths is a JSON array with the old path.
+    let sp: String = conn
+        .query_row(
+            "SELECT source_paths FROM recordings WHERE id = 'r1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(sp, r#"["/x.mp4"]"#);
+
+    // source_path column is gone.
+    let mut stmt = conn.prepare("PRAGMA table_info(recordings)").unwrap();
+    let cols: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
+    assert!(cols.contains(&"source_paths".to_string()));
+    assert!(!cols.contains(&"source_path".to_string()));
+}
+
+#[test]
+fn recordings_store_source_paths_list_preserves_order() {
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+
+    let paths = vec![
+        "/a.mp4".to_string(),
+        "/b.mov".to_string(),
+        "/c.mp3".to_string(),
+    ];
+    let mut r = sample_recording("p1");
+    r.source_paths = paths.clone();
+    storage::recordings::insert(&store, &r).unwrap();
+
+    let loaded = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(loaded.source_paths, paths);
+}
