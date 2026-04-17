@@ -76,35 +76,45 @@ pub async fn list_ollama_models(ollama_url: String) -> Result<Vec<String>, Strin
 
 // ── Audio Extraction ───────────────────────────────────────────────────────────
 
-/// Use ffmpeg to extract/convert the input file to a 16 kHz mono WAV suitable
-/// for Whisper. Returns the path to the temporary WAV file.
+/// Extract audio to a caller-chosen output path. Returns the path on success.
+pub async fn run_extract(
+    input_path: &str,
+    output_wav: &std::path::Path,
+) -> Result<(), String> {
+    if let Some(parent) = output_wav.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create output dir: {e}"))?;
+    }
+    let output = Command::new("ffmpeg")
+        .args([
+            "-i", input_path,
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            "-y",
+            output_wav.to_str().unwrap(),
+        ])
+        .output()
+        .map_err(|e| format!("ffmpeg not found or failed to start: {e}. Install via: brew install ffmpeg"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "ffmpeg error:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(())
+}
+
+/// Legacy Tauri command — kept so the current UI keeps working during the
+/// transition. Writes to a predictable temp path.
 #[tauri::command]
 pub async fn extract_audio(
     _app: AppHandle,
     input_path: String,
 ) -> Result<String, String> {
-    // Write to a predictable temp location so we can clean it up later.
     let temp_wav = std::env::temp_dir().join("meister_audio.wav");
-
-    let output = Command::new("ffmpeg")
-        .args([
-            "-i",
-            &input_path,
-            "-vn",                        // drop video stream
-            "-acodec", "pcm_s16le",       // 16-bit PCM
-            "-ar", "16000",               // 16 kHz
-            "-ac", "1",                   // mono
-            "-y",                         // overwrite if exists
-            temp_wav.to_str().unwrap(),
-        ])
-        .output()
-        .map_err(|e| format!("ffmpeg not found or failed to start: {e}. Install via: brew install ffmpeg"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ffmpeg error:\n{stderr}"));
-    }
-
+    run_extract(&input_path, &temp_wav).await?;
     Ok(temp_wav.to_string_lossy().to_string())
 }
 
@@ -121,6 +131,56 @@ struct ModelWarming {
     size: String,
 }
 
+/// Run whisper on an already-extracted WAV. Returns the transcript text.
+pub async fn run_transcribe(
+    app: &AppHandle,
+    wav_path: &std::path::Path,
+    whisper_model: &str,
+    language: &str,
+) -> Result<String, String> {
+    let size = transcription::ModelSize::from_str(whisper_model)
+        .ok_or_else(|| format!("unknown model size: {whisper_model}"))?;
+    let models_dir = app.path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?
+        .join("models");
+
+    if transcription::is_warming(size) {
+        let _ = app.emit("model-warming", ModelWarming { size: whisper_model.to_string() });
+    }
+
+    let app_cb = app.clone();
+    let wav = wav_path.to_path_buf();
+    let lang = if language.is_empty() || language == "auto" {
+        None
+    } else {
+        Some(language.to_string())
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        transcription::transcribe_wav_with_callback(
+            &models_dir,
+            size,
+            &wav,
+            lang.as_deref(),
+            move |pct| {
+                let _ = app_cb.emit("transcribe-progress", TranscribeProgress {
+                    percent: pct.clamp(0, 100) as u32,
+                    message: format!("Transcribing… {pct}%"),
+                });
+            },
+        )
+    })
+    .await
+    .map_err(|e| format!("task join: {e}"))?;
+
+    let _ = app.emit("transcribe-progress", TranscribeProgress {
+        percent: 100,
+        message: "Transcription complete.".to_string(),
+    });
+    result
+}
+
 #[tauri::command]
 pub async fn transcribe_audio(
     app: AppHandle,
@@ -128,43 +188,7 @@ pub async fn transcribe_audio(
     whisper_model: String,
     language: String,
 ) -> Result<String, String> {
-    let size = transcription::ModelSize::from_str(&whisper_model)
-        .ok_or_else(|| format!("unknown model size: {whisper_model}"))?;
-
-    let models_dir = app.path()
-        .app_data_dir()
-        .map_err(|e| format!("resolve app_data_dir: {e}"))?
-        .join("models");
-
-    if transcription::is_warming(size) {
-        let _ = app.emit("model-warming", ModelWarming { size: whisper_model.clone() });
-    }
-
-    let app_for_cb = app.clone();
-    let wav_path_buf = std::path::PathBuf::from(&wav_path);
-    let lang = if language.is_empty() || language == "auto" { None } else { Some(language) };
-
-    let result = tokio::task::spawn_blocking(move || {
-        transcription::transcribe_wav_with_callback(
-            &models_dir,
-            size,
-            &wav_path_buf,
-            lang.as_deref(),
-            move |pct| {
-                let _ = app_for_cb.emit("transcribe-progress", TranscribeProgress {
-                    percent: pct.clamp(0, 100) as u32,
-                    message: format!("Transcribing… {pct}%"),
-                });
-            },
-        )
-    }).await.map_err(|e| format!("task join: {e}"))?;
-
-    let _ = app.emit("transcribe-progress", TranscribeProgress {
-        percent: 100,
-        message: "Transcription complete.".to_string(),
-    });
-
-    result
+    run_transcribe(&app, std::path::Path::new(&wav_path), &whisper_model, &language).await
 }
 
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
@@ -175,29 +199,24 @@ struct FormatProgress {
     done: bool,
 }
 
-/// Send the transcript + template to an Ollama model. Streams the response and
-/// emits `format-progress` events with the running character count so the UI
-/// can show live progress instead of a frozen spinner. Returns the full text
-/// once the stream ends.
-#[tauri::command]
-pub async fn format_transcript(
-    app: AppHandle,
-    transcript: String,
-    template_content: String,
-    ollama_url: String,
-    model: String,
+/// Call Ollama to format a transcript against a template. Emits
+/// `format-progress` events while streaming.
+pub async fn run_format(
+    app: &AppHandle,
+    transcript: &str,
+    template_content: &str,
+    ollama_url: &str,
+    model: &str,
 ) -> Result<String, String> {
     use futures_util::StreamExt;
 
-    let prompt = build_prompt(&transcript, &template_content);
-
+    let prompt = build_prompt(transcript, template_content);
     let client = reqwest::Client::new();
     let body = OllamaGenerateRequest {
-        model: model.clone(),
+        model: model.to_string(),
         prompt,
         stream: true,
     };
-
     let resp = client
         .post(format!("{}/api/generate", ollama_url))
         .json(&body)
@@ -205,33 +224,25 @@ pub async fn format_transcript(
         .send()
         .await
         .map_err(|e| format!("Cannot reach Ollama at {ollama_url}: {e}"))?;
-
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("Ollama returned {status}: {text}"));
     }
-
-    // Ollama streams newline-delimited JSON: one object per generated chunk,
-    // with `response` (the new tokens) and `done` (true on final).
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
     let mut accumulated = String::new();
-
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("Ollama stream error: {e}"))?;
         buf.push_str(&String::from_utf8_lossy(&bytes));
-
         while let Some(nl) = buf.find('\n') {
             let line = buf[..nl].to_string();
             buf.drain(..=nl);
             if line.trim().is_empty() { continue; }
-
             let obj: serde_json::Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
-                Err(_) => continue, // partial chunk; drop and keep streaming
+                Err(_) => continue,
             };
-
             if let Some(piece) = obj.get("response").and_then(|v| v.as_str()) {
                 accumulated.push_str(piece);
                 let _ = app.emit("format-progress", FormatProgress {
@@ -239,7 +250,6 @@ pub async fn format_transcript(
                     done: false,
                 });
             }
-
             if obj.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
                 let _ = app.emit("format-progress", FormatProgress {
                     chars: accumulated.chars().count(),
@@ -248,8 +258,18 @@ pub async fn format_transcript(
             }
         }
     }
-
     Ok(accumulated)
+}
+
+#[tauri::command]
+pub async fn format_transcript(
+    app: AppHandle,
+    transcript: String,
+    template_content: String,
+    ollama_url: String,
+    model: String,
+) -> Result<String, String> {
+    run_format(&app, &transcript, &template_content, &ollama_url, &model).await
 }
 
 fn build_prompt(transcript: &str, template: &str) -> String {
