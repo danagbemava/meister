@@ -109,10 +109,18 @@ fn saved_path_matches_any_format(
 }
 
 use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::commands::{run_extract, run_format, run_transcribe};
 use crate::storage::{self, Recording, Store};
+
+#[derive(Clone, serde::Serialize)]
+struct StageChangedEvent {
+    #[serde(rename = "recordingId")]
+    recording_id: String,
+    stage: String,
+    status: String,
+}
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -185,6 +193,11 @@ pub async fn run_recording(
 
         storage::stages::set_running(&store, &recording_id, stage_kind)
             .map_err(|e| format!("set_running: {e}"))?;
+        let _ = app.emit("stage-changed", StageChangedEvent {
+            recording_id: recording_id.clone(),
+            stage: stage_kind.as_str().to_string(),
+            status: "running".to_string(),
+        });
 
         let result = match stage_kind {
             StageKind::Extract => {
@@ -258,10 +271,20 @@ pub async fn run_recording(
             Ok(out) => {
                 storage::stages::set_completed(&store, &recording_id, stage_kind, out)
                     .map_err(|e| format!("set_completed: {e}"))?;
+                let _ = app.emit("stage-changed", StageChangedEvent {
+                    recording_id: recording_id.clone(),
+                    stage: stage_kind.as_str().to_string(),
+                    status: "completed".to_string(),
+                });
             }
             Err(e) => {
                 storage::stages::set_failed(&store, &recording_id, stage_kind, &e)
                     .map_err(|ee| format!("set_failed: {ee}"))?;
+                let _ = app.emit("stage-changed", StageChangedEvent {
+                    recording_id: recording_id.clone(),
+                    stage: stage_kind.as_str().to_string(),
+                    status: "failed".to_string(),
+                });
                 return Err(e);
             }
         }

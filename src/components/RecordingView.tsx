@@ -70,6 +70,17 @@ export default function RecordingView({
     return () => { unlisten1?.(); unlisten2?.(); };
   }, []);
 
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<{ recordingId: string; stage: string; status: string }>(
+      "stage-changed",
+      (e) => {
+        if (e.payload.recordingId === recordingId) reload();
+      },
+    ).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [recordingId, reload]);
+
   if (!rec) return <div className="p-8 text-white/40">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>
@@ -97,7 +108,8 @@ export default function RecordingView({
         }
       }
       await reload();
-    } catch (_) {
+    } catch (err) {
+      console.error("run_recording failed:", err);
       await reload();
     } finally {
       setRunning(false);
