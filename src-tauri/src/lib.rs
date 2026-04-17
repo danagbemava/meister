@@ -17,6 +17,10 @@ pub fn run() {
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
 
+            // In a bundled .app, resources live under app.path().resource_dir().
+            // In `cargo run` / `tauri dev`, that returns the binary's directory
+            // (target/debug/), which doesn't contain bundle.resources. Fall back
+            // to the source tree's src-tauri/resources/ in that case.
             let resource_dir = app.path().resource_dir()?;
             let bundled_dir = if resource_dir.join("models").join("ggml-base.bin").is_file() {
                 resource_dir
@@ -24,6 +28,9 @@ pub fn run() {
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")
             };
 
+            // whisper.cpp's Metal backend looks for ggml-metal.metal here.
+            // Without this, init falls back to CoreML+CPU and the decoder
+            // loses GPU acceleration.
             std::env::set_var("GGML_METAL_PATH_RESOURCES", &bundled_dir);
 
             transcription::ensure_bundled_base_copied(&bundled_dir, &app_data_dir)
