@@ -162,7 +162,15 @@ export default function RecordingView({
 
         <details className="bg-surface-secondary rounded-xl p-4">
           <summary className="cursor-pointer text-sm text-white/60">Recording settings</summary>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-col gap-3">
+            {(() => {
+              const warning = completedStageInvalidation(rec);
+              return warning ? (
+                <p className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded px-3 py-2">
+                  {warning}
+                </p>
+              ) : null;
+            })()}
             <SettingsForm
               settings={rec.settings}
               onChange={async (settings) => {
@@ -269,4 +277,35 @@ async function generatePdf(markdown: string): Promise<Uint8Array> {
     }
   }
   return new Uint8Array(doc.output("arraybuffer") as ArrayBuffer);
+}
+
+function completedStageInvalidation(r: Recording): string | null {
+  const affected: string[] = [];
+  const stage = (k: StageKind) => r.stages.find((s) => s.stage === k);
+
+  const t = stage("transcribe");
+  if (t?.status === "completed") {
+    const encoded = `${r.settings.whisperModel}@${r.settings.language}`;
+    if (t.modelUsed !== encoded) affected.push("transcribe");
+  }
+
+  const f = stage("format");
+  if (f?.status === "completed" && f.modelUsed !== r.settings.model) {
+    affected.push("format");
+  }
+
+  const s = stage("save");
+  if (s?.status === "completed") {
+    const saved = (s.savedPaths ?? []).map((p) => p.split(".").pop() ?? "");
+    const want = [...r.settings.outputFormats].sort().join(",");
+    const have = [...new Set(saved)].sort().join(",");
+    if (want !== have) affected.push("save");
+  }
+
+  if (affected.length === 0) return null;
+  const downstream = affected.includes("transcribe")
+    ? " (+ format, save)"
+    : affected.includes("format") ? " (+ save)"
+    : "";
+  return `Changing settings will re-run: ${affected.join(", ")}${downstream} on next Run.`;
 }
