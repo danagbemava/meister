@@ -390,3 +390,200 @@ pub fn cancel_model_download(
     registry.token_for(&size).cancel();
     Ok(())
 }
+
+// ── Storage commands ──────────────────────────────────────────────────────────
+
+use crate::storage::{self, AppSettings, Project, Recording, Store, Template};
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+#[tauri::command]
+pub async fn list_projects(
+    store: tauri::State<'_, Arc<Store>>,
+) -> Result<Vec<Project>, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::projects::list(&store))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn create_project(
+    store: tauri::State<'_, Arc<Store>>,
+    name: String,
+    default_settings: AppSettings,
+    template: Template,
+) -> Result<Project, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_ms();
+        let p = Project {
+            id,
+            name,
+            created_at: now,
+            updated_at: now,
+            template,
+            default_settings,
+        };
+        storage::projects::insert(&store, &p)?;
+        Ok::<Project, String>(p)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn update_project(
+    store: tauri::State<'_, Arc<Store>>,
+    project: Project,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    let mut p = project;
+    p.updated_at = now_ms();
+    tokio::task::spawn_blocking(move || storage::projects::update(&store, &p))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn delete_project(
+    app: AppHandle,
+    store: tauri::State<'_, Arc<Store>>,
+    id: String,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    let recordings_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?
+        .join("recordings");
+    let id2 = id.clone();
+    tokio::task::spawn_blocking(move || {
+        // Collect recording IDs before the cascade deletes them, then remove
+        // their on-disk folders after the DB delete succeeds.
+        let recs = storage::recordings::list_by_project(&store, &id2)?;
+        storage::projects::delete(&store, &id2)?;
+        for r in recs {
+            let _ = std::fs::remove_dir_all(recordings_root.join(&r.id));
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn list_recordings(
+    store: tauri::State<'_, Arc<Store>>,
+    project_id: String,
+) -> Result<Vec<Recording>, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::recordings::list_by_project(&store, &project_id))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn get_recording(
+    store: tauri::State<'_, Arc<Store>>,
+    id: String,
+) -> Result<Option<Recording>, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::recordings::get(&store, &id))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn create_recording(
+    store: tauri::State<'_, Arc<Store>>,
+    project_id: String,
+    name: String,
+    source_path: String,
+    settings: AppSettings,
+) -> Result<Recording, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_ms();
+        let r = Recording {
+            id,
+            project_id,
+            name,
+            source_path,
+            created_at: now,
+            updated_at: now,
+            settings,
+            stages: vec![],
+        };
+        storage::recordings::insert(&store, &r)?;
+        // Re-read to pick up the auto-initialized stage rows.
+        storage::recordings::get(&store, &r.id)?
+            .ok_or_else(|| "recording vanished after insert".to_string())
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn update_recording(
+    store: tauri::State<'_, Arc<Store>>,
+    recording: Recording,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    let mut r = recording;
+    r.updated_at = now_ms();
+    tokio::task::spawn_blocking(move || storage::recordings::update(&store, &r))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn delete_recording(
+    app: AppHandle,
+    store: tauri::State<'_, Arc<Store>>,
+    id: String,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?
+        .join("recordings")
+        .join(&id);
+    let id2 = id.clone();
+    tokio::task::spawn_blocking(move || storage::recordings::delete(&store, &id2))
+        .await
+        .map_err(|e| format!("join: {e}"))??;
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn start_over_recording(
+    app: AppHandle,
+    store: tauri::State<'_, Arc<Store>>,
+    id: String,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?
+        .join("recordings")
+        .join(&id);
+    let id2 = id.clone();
+    tokio::task::spawn_blocking(move || {
+        storage::stages::reset_from(&store, &id2, storage::StageKind::Extract)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))??;
+    let _ = std::fs::remove_file(dir.join("audio.wav"));
+    Ok(())
+}

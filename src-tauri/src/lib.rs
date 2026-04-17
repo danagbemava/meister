@@ -63,6 +63,16 @@ pub fn run() {
             commands::list_available_models,
             commands::download_model,
             commands::cancel_model_download,
+            commands::list_projects,
+            commands::create_project,
+            commands::update_project,
+            commands::delete_project,
+            commands::list_recordings,
+            commands::get_recording,
+            commands::create_recording,
+            commands::update_recording,
+            commands::delete_recording,
+            commands::start_over_recording,
             orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())
