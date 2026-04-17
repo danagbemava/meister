@@ -6,6 +6,7 @@
 
 pub mod schema;
 pub mod types;
+pub mod projects;
 
 pub use types::*;
 
@@ -32,7 +33,6 @@ impl Store {
     }
 
     /// Open an in-memory database for tests.
-    #[cfg(test)]
     pub fn open_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory().map_err(|e| format!("open db: {e}"))?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")
