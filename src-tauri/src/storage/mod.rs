@@ -8,6 +8,7 @@ pub mod schema;
 pub mod types;
 pub mod projects;
 pub mod recordings;
+pub mod stages;
 
 pub use types::*;
 

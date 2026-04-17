@@ -134,3 +134,83 @@ fn delete_project_cascades_to_recordings_and_stages() {
         .unwrap();
     assert_eq!(n, 0);
 }
+
+#[test]
+fn stage_update_roundtrip() {
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+    storage::recordings::insert(&store, &sample_recording("p1")).unwrap();
+
+    storage::stages::set_running(&store, "r1", StageKind::Extract).unwrap();
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(rec.stages[0].status, StageStatus::Running);
+
+    storage::stages::set_completed(
+        &store,
+        "r1",
+        StageKind::Transcribe,
+        storage::stages::CompletedOutput {
+            output: Some("hello".to_string()),
+            model_used: Some("base".to_string()),
+            template_hash: None,
+            saved_paths: None,
+            completed_at: 9_999,
+        },
+    )
+    .unwrap();
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(rec.stages[1].status, StageStatus::Completed);
+    assert_eq!(rec.stages[1].output.as_deref(), Some("hello"));
+    assert_eq!(rec.stages[1].model_used.as_deref(), Some("base"));
+    assert_eq!(rec.stages[1].completed_at, Some(9_999));
+
+    storage::stages::set_failed(&store, "r1", StageKind::Format, "ollama down").unwrap();
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(rec.stages[2].status, StageStatus::Failed);
+    assert_eq!(rec.stages[2].error.as_deref(), Some("ollama down"));
+}
+
+#[test]
+fn reset_downstream_clears_later_stages() {
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+    storage::recordings::insert(&store, &sample_recording("p1")).unwrap();
+
+    // Pretend all four succeeded.
+    for kind in StageKind::ALL {
+        storage::stages::set_completed(
+            &store, "r1", kind,
+            storage::stages::CompletedOutput {
+                output: Some("x".to_string()),
+                model_used: Some("m".to_string()),
+                template_hash: None,
+                saved_paths: None,
+                completed_at: 1,
+            },
+        ).unwrap();
+    }
+
+    // Reset everything downstream of transcribe (so format + save go back to pending).
+    storage::stages::reset_downstream(&store, "r1", StageKind::Transcribe).unwrap();
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(rec.stages[0].status, StageStatus::Completed);       // extract
+    assert_eq!(rec.stages[1].status, StageStatus::Completed);       // transcribe kept
+    assert_eq!(rec.stages[2].status, StageStatus::Pending);         // format reset
+    assert_eq!(rec.stages[2].output, None);
+    assert_eq!(rec.stages[3].status, StageStatus::Pending);         // save reset
+}
+
+#[test]
+fn mark_running_as_failed_sweeps_interrupted_rows() {
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+    storage::recordings::insert(&store, &sample_recording("p1")).unwrap();
+
+    storage::stages::set_running(&store, "r1", StageKind::Transcribe).unwrap();
+    let n = storage::stages::mark_running_as_failed(&store, "crashed").unwrap();
+    assert_eq!(n, 1);
+
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    assert_eq!(rec.stages[1].status, StageStatus::Failed);
+    assert_eq!(rec.stages[1].error.as_deref(), Some("crashed"));
+}
