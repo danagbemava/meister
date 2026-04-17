@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { Project, Recording } from "../types/storage";
 import { overallStatus } from "../types/storage";
 import { api } from "../api/storage";
@@ -10,7 +11,12 @@ interface Props {
   selection: Selection;
   onSelect: (s: Selection) => void;
   onProjectsChanged: () => void;
+  onPickFilesForProject: (projectId: string, paths: string[]) => void;
 }
+
+const AUDIO_VIDEO_EXTS = [
+  "mp4", "mov", "mkv", "avi", "mp3", "m4a", "wav", "ogg", "webm", "aac", "flac",
+];
 
 const DEFAULTS = {
   ollamaUrl: "http://localhost:11434",
@@ -26,6 +32,7 @@ export default function Sidebar({
   selection,
   onSelect,
   onProjectsChanged,
+  onPickFilesForProject,
 }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
@@ -59,6 +66,18 @@ export default function Sidebar({
     selection.kind === "project" && selection.projectId === id;
   const recordingSelected = (id: string) =>
     selection.kind === "recording" && selection.recordingId === id;
+
+  const handleAddRecording = async (e: React.MouseEvent, projectId: string) => {
+    e.stopPropagation();
+    const picked = await open({
+      multiple: true,
+      filters: [{ name: "Audio / Video", extensions: AUDIO_VIDEO_EXTS }],
+    });
+    if (!picked) return;
+    const list = Array.isArray(picked) ? picked : [picked];
+    if (list.length === 0) return;
+    onPickFilesForProject(projectId, list);
+  };
 
   return (
     <aside className="w-60 shrink-0 border-r border-white/5 bg-surface-secondary flex flex-col">
@@ -102,19 +121,26 @@ export default function Sidebar({
           const isExpanded = expanded[p.id] ?? true;
           return (
             <div key={p.id}>
-              <button
+              <div
                 onClick={() => {
                   onSelect({ kind: "project", projectId: p.id });
                   toggleExpand(p.id);
                 }}
-                className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm
+                className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm cursor-pointer group
                   ${projectSelected(p.id)
                     ? "bg-accent/15 text-accent"
                     : "hover:bg-white/5 text-white/80"}`}
               >
                 <span className="text-white/30 text-xs w-3">{isExpanded ? "▾" : "▸"}</span>
                 <span className="truncate flex-1">{p.name}</span>
-              </button>
+                <button
+                  onClick={(e) => handleAddRecording(e, p.id)}
+                  className="text-white/30 hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-1"
+                  title="Add a new recording"
+                >
+                  +
+                </button>
+              </div>
               {isExpanded && recs.map((r) => (
                 <button
                   key={r.id}

@@ -6,6 +6,8 @@ interface Props {
   onRemove: (index: number) => void;
   onCancel: () => void;
   onCreate: () => void;
+  name: string;
+  onNameChange: (name: string) => void;
 }
 
 function basename(p: string): string {
@@ -18,6 +20,8 @@ export default function StagingList({
   onRemove,
   onCancel,
   onCreate,
+  name,
+  onNameChange,
 }: Props) {
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -83,7 +87,17 @@ export default function StagingList({
           </li>
         ))}
       </ul>
-      <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+      <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+        <label className="text-xs text-white/50 shrink-0">Name</label>
+        <input
+          type="text"
+          className="input flex-1 text-sm"
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="Recording name"
+        />
+      </div>
+      <div className="flex items-center justify-end gap-2">
         <button
           onClick={onCancel}
           className="px-3 py-1.5 rounded text-xs text-white/60 hover:text-white"

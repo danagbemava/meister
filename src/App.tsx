@@ -16,6 +16,7 @@ export default function App() {
   const [recordingsByProject, setRecordingsByProject] = useState<Record<string, Recording[]>>({});
   const [selection, setSelection] = useState<Selection>({ kind: "none" });
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [pendingStagedPaths, setPendingStagedPaths] = useState<{ projectId: string; paths: string[] } | null>(null);
 
   const refreshProjects = useCallback(async () => {
     const list = await api.listProjects();
@@ -49,6 +50,10 @@ export default function App() {
           selection={selection}
           onSelect={setSelection}
           onProjectsChanged={refreshProjects}
+          onPickFilesForProject={(projectId, paths) => {
+            setSelection({ kind: "project", projectId });
+            setPendingStagedPaths({ projectId, paths });
+          }}
         />
         <div className="flex-1 overflow-hidden">
           {selection.kind === "none" && (
@@ -62,6 +67,12 @@ export default function App() {
                 refreshRecordings(r.projectId);
                 setSelection({ kind: "recording", projectId: r.projectId, recordingId: r.id });
               }}
+              initialStagedPaths={
+                pendingStagedPaths?.projectId === selection.projectId
+                  ? pendingStagedPaths.paths
+                  : undefined
+              }
+              onInitialStagedConsumed={() => setPendingStagedPaths(null)}
             />
           )}
           {selection.kind === "recording" && (

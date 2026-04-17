@@ -31,6 +31,8 @@ export default function RecordingView({
   const [transcribePct, setTranscribePct] = useState(0);
   const [formatChars, setFormatChars] = useState(0);
   const [missingByPath, setMissingByPath] = useState<Record<string, boolean>>({});
+  const [renamingRec, setRenamingRec] = useState(false);
+  const [draftRecName, setDraftRecName] = useState("");
 
   useEffect(() => {
     if (!rec) return;
@@ -173,7 +175,36 @@ export default function RecordingView({
     <div className="h-full flex flex-col">
       <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">{rec.name}</h1>
+          {renamingRec ? (
+            <input
+              autoFocus
+              className="input text-xl font-semibold flex-1 mr-4"
+              value={draftRecName}
+              onChange={(e) => setDraftRecName(e.target.value)}
+              onBlur={async () => {
+                const name = draftRecName.trim() || rec.name;
+                setRenamingRec(false);
+                if (name !== rec.name) {
+                  const next = { ...rec, name };
+                  setRec(next);
+                  await api.updateRecording(next);
+                  onRecordingChanged();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Escape") { setDraftRecName(rec.name); setRenamingRec(false); }
+              }}
+            />
+          ) : (
+            <h1
+              onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
+              className="text-xl font-semibold cursor-text hover:text-accent"
+              title="Click to rename"
+            >
+              {rec.name}
+            </h1>
+          )}
           <div className="flex items-center gap-2 text-xs">
             <span className="text-white/40">{overallStatus(rec)}</span>
             <button onClick={deleteMe} className="text-white/40 hover:text-red-400">Delete</button>

@@ -10,6 +10,8 @@ interface Props {
   projectId: string;
   onProjectChanged: () => void;
   onRecordingCreated: (r: Recording) => void;
+  initialStagedPaths?: string[];
+  onInitialStagedConsumed?: () => void;
 }
 
 function basename(p: string): string {
@@ -25,12 +27,15 @@ export default function ProjectView({
   projectId,
   onProjectChanged,
   onRecordingCreated,
+  initialStagedPaths,
+  onInitialStagedConsumed,
 }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [staging, setStaging] = useState<string[]>([]);
+  const [stagingName, setStagingName] = useState("");
 
   const load = useCallback(async () => {
     const list = await api.listProjects();
@@ -44,7 +49,10 @@ export default function ProjectView({
   useEffect(() => { load(); }, [load]);
 
   // Clear staging when switching projects.
-  useEffect(() => { setStaging([]); }, [projectId]);
+  useEffect(() => {
+    setStaging([]);
+    setStagingName("");
+  }, [projectId]);
 
   const save = async (next: Project) => {
     await api.updateProject(next);
@@ -62,24 +70,41 @@ export default function ProjectView({
           seen.add(p);
         }
       }
+      // Auto-fill the name on first files dropped, but don't overwrite a user edit.
+      if (prev.length === 0 && next.length > 0) {
+        setStagingName(deriveName(next));
+      }
       return next;
     });
   };
 
+  // Merge in paths dropped from the sidebar "+" button.
+  useEffect(() => {
+    if (!initialStagedPaths || initialStagedPaths.length === 0) return;
+    onFilesPicked(initialStagedPaths);
+    onInitialStagedConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialStagedPaths]);
+
   const removeAt = (idx: number) =>
     setStaging((prev) => prev.filter((_, i) => i !== idx));
 
-  const cancelStaging = () => setStaging([]);
+  const cancelStaging = () => {
+    setStaging([]);
+    setStagingName("");
+  };
 
   const createFromStaging = async () => {
     if (!project || staging.length === 0) return;
+    const name = stagingName.trim() || deriveName(staging);
     const rec = await api.createRecording(
       projectId,
-      deriveName(staging),
+      name,
       staging,
       project.defaultSettings,
     );
     setStaging([]);
+    setStagingName("");
     setRecordings((rs) => [...rs, rec]);
     onRecordingCreated(rec);
   };
@@ -148,6 +173,18 @@ export default function ProjectView({
           Recordings
         </h2>
         <div className="flex flex-col gap-3">
+          <RecordingDropZone onPicked={onFilesPicked} />
+          {staging.length > 0 && (
+            <StagingList
+              paths={staging}
+              onReorder={setStaging}
+              onRemove={removeAt}
+              onCancel={cancelStaging}
+              onCreate={createFromStaging}
+              name={stagingName}
+              onNameChange={setStagingName}
+            />
+          )}
           {recordings.length > 0 && (
             <ul className="flex flex-col gap-1">
               {recordings.map((r) => (
@@ -157,16 +194,6 @@ export default function ProjectView({
               ))}
             </ul>
           )}
-          {staging.length > 0 && (
-            <StagingList
-              paths={staging}
-              onReorder={setStaging}
-              onRemove={removeAt}
-              onCancel={cancelStaging}
-              onCreate={createFromStaging}
-            />
-          )}
-          <RecordingDropZone onPicked={onFilesPicked} />
         </div>
       </div>
     </div>
