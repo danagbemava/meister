@@ -145,17 +145,6 @@ pub async fn run_extract(
     Ok(())
 }
 
-/// Legacy Tauri command — kept so the current UI keeps working during the
-/// transition. Writes to a predictable temp path.
-#[tauri::command]
-pub async fn extract_audio(
-    _app: AppHandle,
-    input_path: String,
-) -> Result<String, String> {
-    let temp_wav = std::env::temp_dir().join("meister_audio.wav");
-    run_extract(&[input_path], &temp_wav).await?;
-    Ok(temp_wav.to_string_lossy().to_string())
-}
 
 // ── Transcription ──────────────────────────────────────────────────────────────
 
@@ -220,15 +209,6 @@ pub async fn run_transcribe(
     result
 }
 
-#[tauri::command]
-pub async fn transcribe_audio(
-    app: AppHandle,
-    wav_path: String,
-    whisper_model: String,
-    language: String,
-) -> Result<String, String> {
-    run_transcribe(&app, std::path::Path::new(&wav_path), &whisper_model, &language).await
-}
 
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
@@ -300,16 +280,6 @@ pub async fn run_format(
     Ok(accumulated)
 }
 
-#[tauri::command]
-pub async fn format_transcript(
-    app: AppHandle,
-    transcript: String,
-    template_content: String,
-    ollama_url: String,
-    model: String,
-) -> Result<String, String> {
-    run_format(&app, &transcript, &template_content, &ollama_url, &model).await
-}
 
 fn build_prompt(transcript: &str, template: &str) -> String {
     format!(

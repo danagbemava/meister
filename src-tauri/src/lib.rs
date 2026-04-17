@@ -53,9 +53,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::check_dependencies,
             commands::list_ollama_models,
-            commands::extract_audio,
-            commands::transcribe_audio,
-            commands::format_transcript,
             commands::save_text_file,
             commands::save_binary_file,
             commands::read_file_as_text,
