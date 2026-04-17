@@ -9,8 +9,10 @@ pub mod types;
 pub mod projects;
 pub mod recordings;
 pub mod stages;
+pub mod hash;
 
 pub use types::*;
+pub use hash::template_hash;
 
 use rusqlite::Connection;
 use std::path::Path;
