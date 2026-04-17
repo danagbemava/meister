@@ -108,6 +108,168 @@ fn saved_path_matches_any_format(
     formats.iter().any(|f| path_has_extension(path, fmt_to_ext(f)))
 }
 
+use std::sync::Arc;
+use tauri::AppHandle;
+
+use crate::commands::{run_extract, run_format, run_transcribe};
+use crate::storage::{self, Recording, Store};
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn recording_dir(app: &AppHandle, recording_id: &str) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?
+        .join("recordings")
+        .join(recording_id))
+}
+
+/// Run the pipeline for a recording, skipping any stage whose cached output is
+/// still valid. Idempotent — this is how both "Run" and "Resume" work.
+#[tauri::command]
+pub async fn run_recording(
+    app: AppHandle,
+    store: tauri::State<'_, Arc<Store>>,
+    recording_id: String,
+) -> Result<(), String> {
+    let store: Arc<Store> = (*store).clone();
+
+    // Load recording + project.
+    let rec: Recording = storage::recordings::get(&store, &recording_id)
+        .map_err(|e| format!("load recording: {e}"))?
+        .ok_or_else(|| format!("recording not found: {recording_id}"))?;
+    let project = storage::projects::get(&store, &rec.project_id)
+        .map_err(|e| format!("load project: {e}"))?
+        .ok_or_else(|| format!("project not found: {}", rec.project_id))?;
+
+    let template_hash = storage::template_hash(&project.template.content);
+    let wav_path = recording_dir(&app, &recording_id)?.join("audio.wav");
+    let wav_exists = wav_path.is_file();
+
+    // Walk stages; on invalidation, reset downstream before starting.
+    // We reload the recording's stages after each transition to avoid stale in-memory copies.
+    for stage_kind in StageKind::ALL {
+        let rec = storage::recordings::get(&store, &recording_id)
+            .map_err(|e| format!("reload recording: {e}"))?
+            .ok_or_else(|| "recording vanished".to_string())?;
+        let stage = rec
+            .stages
+            .iter()
+            .find(|s| s.stage == stage_kind)
+            .ok_or_else(|| format!("stage row missing: {:?}", stage_kind))?;
+
+        let reusable = matches!(stage.status, storage::StageStatus::Completed)
+            && inputs_unchanged(
+                stage_kind,
+                stage,
+                &rec.settings,
+                &template_hash,
+                &rec.source_path,
+                wav_exists,
+            );
+
+        if reusable {
+            continue;
+        }
+
+        // Invalidation: clear this stage + everything downstream before running.
+        storage::stages::reset_from(&store, &recording_id, stage_kind)
+            .map_err(|e| format!("reset_from: {e}"))?;
+
+        storage::stages::set_running(&store, &recording_id, stage_kind)
+            .map_err(|e| format!("set_running: {e}"))?;
+
+        let result = match stage_kind {
+            StageKind::Extract => {
+                run_extract(&rec.source_path, &wav_path).await
+                    .map(|_| storage::stages::CompletedOutput {
+                        output: None,
+                        model_used: None,
+                        template_hash: None,
+                        saved_paths: None,
+                        completed_at: now_ms(),
+                    })
+            }
+            StageKind::Transcribe => {
+                let whisper_model = rec.settings.whisper_model.clone();
+                let language = rec.settings.language.clone();
+                let transcript = run_transcribe(&app, &wav_path, &whisper_model, &language).await?;
+                // Success: delete the wav to reclaim disk.
+                let _ = std::fs::remove_file(&wav_path);
+                Ok(storage::stages::CompletedOutput {
+                    output: Some(transcript),
+                    // Encode language into model_used for invalidation checks.
+                    model_used: Some(format!("{}@{}", whisper_model, language)),
+                    template_hash: None,
+                    saved_paths: None,
+                    completed_at: now_ms(),
+                })
+            }
+            StageKind::Format => {
+                // Load transcript from transcribe stage output.
+                let rec2 = storage::recordings::get(&store, &recording_id)
+                    .map_err(|e| format!("reload for format: {e}"))?
+                    .ok_or_else(|| "recording vanished".to_string())?;
+                let transcript = rec2
+                    .stages
+                    .iter()
+                    .find(|s| s.stage == StageKind::Transcribe)
+                    .and_then(|s| s.output.clone())
+                    .ok_or_else(|| "transcribe output missing".to_string())?;
+                let formatted = run_format(
+                    &app,
+                    &transcript,
+                    &project.template.content,
+                    &rec.settings.ollama_url,
+                    &rec.settings.model,
+                )
+                .await?;
+                Ok(storage::stages::CompletedOutput {
+                    output: Some(formatted),
+                    model_used: Some(rec.settings.model.clone()),
+                    template_hash: Some(template_hash.clone()),
+                    saved_paths: None,
+                    completed_at: now_ms(),
+                })
+            }
+            StageKind::Save => {
+                // Save is user-interactive (file dialogs). We do not run it here —
+                // the UI invokes `save_recording_outputs` separately once the user
+                // picks destinations. Flip this stage to completed with an empty
+                // saved_paths list; the UI will update it.
+                Ok(storage::stages::CompletedOutput {
+                    output: None,
+                    model_used: None,
+                    template_hash: None,
+                    saved_paths: Some(Vec::new()),
+                    completed_at: now_ms(),
+                })
+            }
+        };
+
+        match result {
+            Ok(out) => {
+                storage::stages::set_completed(&store, &recording_id, stage_kind, out)
+                    .map_err(|e| format!("set_completed: {e}"))?;
+            }
+            Err(e) => {
+                storage::stages::set_failed(&store, &recording_id, stage_kind, &e)
+                    .map_err(|ee| format!("set_failed: {ee}"))?;
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

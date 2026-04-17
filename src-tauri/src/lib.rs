@@ -63,6 +63,7 @@ pub fn run() {
             commands::list_available_models,
             commands::download_model,
             commands::cancel_model_download,
+            orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Meister");
