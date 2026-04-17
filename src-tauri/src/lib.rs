@@ -1,5 +1,6 @@
 mod commands;
 pub mod transcription;
+pub mod storage;
 
 use tauri::Manager;
 
