@@ -202,8 +202,7 @@ pub async fn run_recording(
 
         let result = match stage_kind {
             StageKind::Extract => {
-                let src = rec.source_paths.first().map(String::as_str).unwrap_or("");
-                run_extract(src, &wav_path).await
+                run_extract(&rec.source_paths, &wav_path).await
                     .map(|_| storage::stages::CompletedOutput {
                         output: None,
                         model_used: None,

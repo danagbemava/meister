@@ -110,25 +110,30 @@ pub fn build_ffmpeg_args(input_paths: &[String], output_wav: &std::path::Path) -
     args
 }
 
-/// Extract audio to a caller-chosen output path. Returns the path on success.
+/// Extract audio from one or more input files into a single 16 kHz mono WAV.
+/// Inputs are concatenated in order when there is more than one.
 pub async fn run_extract(
-    input_path: &str,
+    input_paths: &[String],
     output_wav: &std::path::Path,
 ) -> Result<(), String> {
+    if input_paths.is_empty() {
+        return Err("no source files provided".to_string());
+    }
+    let missing: Vec<&str> = input_paths
+        .iter()
+        .filter(|p| !std::path::Path::new(p).exists())
+        .map(|s| s.as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!("source file(s) missing:\n  {}", missing.join("\n  ")));
+    }
     if let Some(parent) = output_wav.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("create output dir: {e}"))?;
     }
+    let args = build_ffmpeg_args(input_paths, output_wav);
     let output = Command::new("ffmpeg")
-        .args([
-            "-i", input_path,
-            "-vn",
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
-            "-y",
-            output_wav.to_str().unwrap(),
-        ])
+        .args(&args)
         .output()
         .map_err(|e| format!("ffmpeg not found or failed to start: {e}. Install via: brew install ffmpeg"))?;
     if !output.status.success() {
@@ -148,7 +153,7 @@ pub async fn extract_audio(
     input_path: String,
 ) -> Result<String, String> {
     let temp_wav = std::env::temp_dir().join("meister_audio.wav");
-    run_extract(&input_path, &temp_wav).await?;
+    run_extract(&[input_path], &temp_wav).await?;
     Ok(temp_wav.to_string_lossy().to_string())
 }
 
