@@ -5,6 +5,9 @@
 //! wrapped in `tokio::task::spawn_blocking` from async commands.
 
 pub mod schema;
+pub mod types;
+
+pub use types::*;
 
 use rusqlite::Connection;
 use std::path::Path;
