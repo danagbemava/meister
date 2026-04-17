@@ -76,6 +76,40 @@ pub async fn list_ollama_models(ollama_url: String) -> Result<Vec<String>, Strin
 
 // ── Audio Extraction ───────────────────────────────────────────────────────────
 
+/// Build the ffmpeg argv (without the `ffmpeg` binary itself) for extracting
+/// audio to a 16 kHz mono WAV. For a single input, uses the simple `-vn`
+/// shape; for multiple inputs, uses `filter_complex concat` to stitch their
+/// audio streams together in order.
+pub fn build_ffmpeg_args(input_paths: &[String], output_wav: &std::path::Path) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    for p in input_paths {
+        args.push("-i".to_string());
+        args.push(p.clone());
+    }
+    if input_paths.len() > 1 {
+        let mut filter = String::new();
+        for i in 0..input_paths.len() {
+            filter.push_str(&format!("[{i}:a]"));
+        }
+        filter.push_str(&format!("concat=n={}:v=0:a=1[out]", input_paths.len()));
+        args.push("-filter_complex".to_string());
+        args.push(filter);
+        args.push("-map".to_string());
+        args.push("[out]".to_string());
+    } else {
+        args.push("-vn".to_string());
+    }
+    args.push("-acodec".to_string());
+    args.push("pcm_s16le".to_string());
+    args.push("-ar".to_string());
+    args.push("16000".to_string());
+    args.push("-ac".to_string());
+    args.push("1".to_string());
+    args.push("-y".to_string());
+    args.push(output_wav.to_string_lossy().to_string());
+    args
+}
+
 /// Extract audio to a caller-chosen output path. Returns the path on success.
 pub async fn run_extract(
     input_path: &str,
@@ -616,4 +650,73 @@ pub async fn record_saved_outputs(
 #[tauri::command]
 pub fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
+}
+
+#[cfg(test)]
+mod build_ffmpeg_args_tests {
+    use super::build_ffmpeg_args;
+    use std::path::PathBuf;
+
+    #[test]
+    fn single_file_uses_simple_vn_shape() {
+        let paths = vec!["/a.mp4".to_string()];
+        let out = PathBuf::from("/tmp/out.wav");
+        let args = build_ffmpeg_args(&paths, &out);
+        assert_eq!(
+            args,
+            vec![
+                "-i", "/a.mp4",
+                "-vn",
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                "-y",
+                "/tmp/out.wav",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        );
+        assert!(!args.iter().any(|a| a == "-filter_complex"));
+    }
+
+    #[test]
+    fn multi_file_uses_concat_filter() {
+        let paths = vec![
+            "/a.mp4".to_string(),
+            "/b.mov".to_string(),
+            "/c.mp3".to_string(),
+        ];
+        let out = PathBuf::from("/tmp/out.wav");
+        let args = build_ffmpeg_args(&paths, &out);
+
+        let input_count = args.iter().filter(|a| *a == "-i").count();
+        assert_eq!(input_count, 3);
+
+        let filter_idx = args
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .expect("should have filter_complex");
+        assert_eq!(
+            args[filter_idx + 1],
+            "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]"
+        );
+
+        let map_idx = args.iter().position(|a| a == "-map").expect("should have -map");
+        assert_eq!(args[map_idx + 1], "[out]");
+
+        assert!(args.windows(2).any(|w| w[0] == "-acodec" && w[1] == "pcm_s16le"));
+        assert!(args.windows(2).any(|w| w[0] == "-ar" && w[1] == "16000"));
+        assert!(args.windows(2).any(|w| w[0] == "-ac" && w[1] == "1"));
+        assert_eq!(args.last().unwrap(), "/tmp/out.wav");
+    }
+
+    #[test]
+    fn two_file_concat_string_is_well_formed() {
+        let paths = vec!["/a.mp4".to_string(), "/b.mp4".to_string()];
+        let out = PathBuf::from("/tmp/out.wav");
+        let args = build_ffmpeg_args(&paths, &out);
+        let filter_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
+        assert_eq!(args[filter_idx + 1], "[0:a][1:a]concat=n=2:v=0:a=1[out]");
+    }
 }
