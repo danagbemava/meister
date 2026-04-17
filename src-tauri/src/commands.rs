@@ -623,3 +623,8 @@ pub async fn record_saved_outputs(
     .await
     .map_err(|e| format!("join: {e}"))?
 }
+
+#[tauri::command]
+pub fn path_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}

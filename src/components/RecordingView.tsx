@@ -30,6 +30,27 @@ export default function RecordingView({
   const [running, setRunning] = useState(false);
   const [transcribePct, setTranscribePct] = useState(0);
   const [formatChars, setFormatChars] = useState(0);
+  const [sourceMissing, setSourceMissing] = useState(false);
+
+  useEffect(() => {
+    if (!rec) return;
+    invoke<boolean>("path_exists", { path: rec.sourcePath })
+      .then((ok) => setSourceMissing(!ok))
+      .catch(() => setSourceMissing(false));
+  }, [rec?.sourcePath, rec?.id]);
+
+  const locateSource = async () => {
+    if (!rec) return;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const path = await open({ multiple: false });
+    if (typeof path === "string") {
+      const next = { ...rec, sourcePath: path };
+      setRec(next);
+      await api.updateRecording(next);
+      setSourceMissing(false);
+      onRecordingChanged();
+    }
+  };
 
   const reload = useCallback(async () => {
     const r = await api.getRecording(recordingId);
@@ -135,6 +156,17 @@ export default function RecordingView({
           </div>
         </div>
         <p className="text-xs text-white/40 truncate">Source: {rec.sourcePath}</p>
+        {sourceMissing && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-sm flex items-center justify-between">
+            <span className="text-red-400">Original file is missing.</span>
+            <button
+              onClick={locateSource}
+              className="text-accent hover:text-accent-hover"
+            >
+              Locate…
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           {STAGE_ORDER.map((k) => {
