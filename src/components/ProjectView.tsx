@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import TemplateEditor from "./TemplateEditor";
 import SettingsForm from "./SettingsForm";
 import RecordingDropZone from "./RecordingDropZone";
+import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
 
@@ -9,6 +10,15 @@ interface Props {
   projectId: string;
   onProjectChanged: () => void;
   onRecordingCreated: (r: Recording) => void;
+}
+
+function basename(p: string): string {
+  return p.split(/[\\/]/).pop() ?? p;
+}
+
+function deriveName(paths: string[]): string {
+  const first = basename(paths[0] ?? "recording");
+  return first.replace(/\.[^.]+$/, "");
 }
 
 export default function ProjectView({
@@ -20,6 +30,7 @@ export default function ProjectView({
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [staging, setStaging] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     const list = await api.listProjects();
@@ -32,22 +43,43 @@ export default function ProjectView({
 
   useEffect(() => { load(); }, [load]);
 
+  // Clear staging when switching projects.
+  useEffect(() => { setStaging([]); }, [projectId]);
+
   const save = async (next: Project) => {
     await api.updateProject(next);
     setProject(next);
     onProjectChanged();
   };
 
-  const addRecording = async (sourcePath: string) => {
-    if (!project) return;
-    const filename = sourcePath.split(/[\\/]/).pop() ?? sourcePath;
-    const name = filename.replace(/\.[^.]+$/, "");
+  const onFilesPicked = (picked: string[]) => {
+    setStaging((prev) => {
+      const seen = new Set(prev);
+      const next = [...prev];
+      for (const p of picked) {
+        if (!seen.has(p)) {
+          next.push(p);
+          seen.add(p);
+        }
+      }
+      return next;
+    });
+  };
+
+  const removeAt = (idx: number) =>
+    setStaging((prev) => prev.filter((_, i) => i !== idx));
+
+  const cancelStaging = () => setStaging([]);
+
+  const createFromStaging = async () => {
+    if (!project || staging.length === 0) return;
     const rec = await api.createRecording(
       projectId,
-      name,
-      sourcePath,
+      deriveName(staging),
+      staging,
       project.defaultSettings,
     );
+    setStaging([]);
     setRecordings((rs) => [...rs, rec]);
     onRecordingCreated(rec);
   };
@@ -125,7 +157,16 @@ export default function ProjectView({
               ))}
             </ul>
           )}
-          <RecordingDropZone onPicked={addRecording} />
+          {staging.length > 0 && (
+            <StagingList
+              paths={staging}
+              onReorder={setStaging}
+              onRemove={removeAt}
+              onCancel={cancelStaging}
+              onCreate={createFromStaging}
+            />
+          )}
+          <RecordingDropZone onPicked={onFilesPicked} />
         </div>
       </div>
     </div>

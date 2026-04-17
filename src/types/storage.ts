@@ -43,7 +43,7 @@ export interface Recording {
   id: string;
   projectId: string;
   name: string;
-  sourcePath: string;
+  sourcePaths: string[];
   createdAt: number;
   updatedAt: number;
   settings: AppSettings;

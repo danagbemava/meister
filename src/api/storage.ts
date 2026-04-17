@@ -19,9 +19,9 @@ export const api = {
   createRecording: (
     projectId: string,
     name: string,
-    sourcePath: string,
+    sourcePaths: string[],
     settings: AppSettings,
-  ) => invoke<Recording>("create_recording", { projectId, name, sourcePath, settings }),
+  ) => invoke<Recording>("create_recording", { projectId, name, sourcePaths, settings }),
 
   updateRecording: (recording: Recording) =>
     invoke<void>("update_recording", { recording }),

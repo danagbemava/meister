@@ -30,25 +30,38 @@ export default function RecordingView({
   const [running, setRunning] = useState(false);
   const [transcribePct, setTranscribePct] = useState(0);
   const [formatChars, setFormatChars] = useState(0);
-  const [sourceMissing, setSourceMissing] = useState(false);
+  const [missingByPath, setMissingByPath] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!rec) return;
-    invoke<boolean>("path_exists", { path: rec.sourcePath })
-      .then((ok) => setSourceMissing(!ok))
-      .catch(() => setSourceMissing(false));
-  }, [rec?.sourcePath, rec?.id]);
+    let cancelled = false;
+    (async () => {
+      const entries: [string, boolean][] = [];
+      for (const p of rec.sourcePaths) {
+        try {
+          const ok = await invoke<boolean>("path_exists", { path: p });
+          entries.push([p, !ok]);
+        } catch {
+          entries.push([p, false]);
+        }
+      }
+      if (!cancelled) {
+        setMissingByPath(Object.fromEntries(entries));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rec?.id, rec?.sourcePaths?.join("|")]);
 
-  const locateSource = async () => {
+  const locateSource = async (idx: number) => {
     if (!rec) return;
     const path = await open({ multiple: false });
-    if (typeof path === "string") {
-      const next = { ...rec, sourcePath: path };
-      setRec(next);
-      await api.updateRecording(next);
-      setSourceMissing(false);
-      onRecordingChanged();
-    }
+    if (typeof path !== "string") return;
+    const nextPaths = [...rec.sourcePaths];
+    nextPaths[idx] = path;
+    const next = { ...rec, sourcePaths: nextPaths };
+    setRec(next);
+    await api.updateRecording(next);
+    onRecordingChanged();
   };
 
   const reload = useCallback(async () => {
@@ -166,18 +179,40 @@ export default function RecordingView({
             <button onClick={deleteMe} className="text-white/40 hover:text-red-400">Delete</button>
           </div>
         </div>
-        <p className="text-xs text-white/40 truncate">Source: {rec.sourcePath}</p>
-        {sourceMissing && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-sm flex items-center justify-between">
-            <span className="text-red-400">Original file is missing.</span>
-            <button
-              onClick={locateSource}
-              className="text-accent hover:text-accent-hover"
-            >
-              Locate…
-            </button>
-          </div>
-        )}
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-white/50 uppercase tracking-wider">
+            {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
+          </span>
+          <ul className="flex flex-col gap-1">
+            {rec.sourcePaths.map((p, idx) => {
+              const missing = !!missingByPath[p];
+              return (
+                <li
+                  key={`${p}-${idx}`}
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded text-xs font-mono
+                    ${missing
+                      ? "bg-red-500/10 border border-red-500/20"
+                      : "bg-surface-secondary"}`}
+                >
+                  <span className="text-white/30 tabular-nums w-5 shrink-0">
+                    {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
+                  </span>
+                  <span className={`flex-1 truncate ${missing ? "text-red-400" : "text-white/60"}`} title={p}>
+                    {p}
+                  </span>
+                  {missing && (
+                    <button
+                      onClick={() => locateSource(idx)}
+                      className="text-accent hover:text-accent-hover shrink-0"
+                    >
+                      Locate…
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
 
         <div className="flex flex-col gap-2">
           {STAGE_ORDER.map((k) => {

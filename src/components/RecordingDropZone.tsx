@@ -2,32 +2,42 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 interface Props {
-  onPicked: (filePath: string) => void;
+  onPicked: (filePaths: string[]) => void;
 }
 
 const AUDIO_VIDEO_EXTS = new Set([
   "mp4", "mov", "mkv", "avi", "mp3", "m4a", "wav", "ogg", "webm", "aac", "flac",
 ]);
 
+function isAudioVideo(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return AUDIO_VIDEO_EXTS.has(ext);
+}
+
 export default function RecordingDropZone({ onPicked }: Props) {
   const [dragging, setDragging] = useState(false);
 
   const openFile = async () => {
-    const path = await open({
+    const paths = await open({
+      multiple: true,
       filters: [{ name: "Audio / Video", extensions: [...AUDIO_VIDEO_EXTS] }],
     });
-    if (path && typeof path === "string") onPicked(path);
+    if (!paths) return;
+    const list = Array.isArray(paths) ? paths : [paths];
+    if (list.length > 0) onPicked(list);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (!AUDIO_VIDEO_EXTS.has(ext)) return;
-    const path = (file as File & { path?: string }).path ?? file.name;
-    onPicked(path);
+    const files = Array.from(e.dataTransfer.files);
+    const picked: string[] = [];
+    for (const file of files) {
+      if (!isAudioVideo(file.name)) continue;
+      const path = (file as File & { path?: string }).path ?? file.name;
+      picked.push(path);
+    }
+    if (picked.length > 0) onPicked(picked);
   };
 
   return (
@@ -43,7 +53,7 @@ export default function RecordingDropZone({ onPicked }: Props) {
     >
       <span className="text-3xl opacity-30">🎬</span>
       <p className="text-sm text-white/40 text-center px-4">
-        Drop a recording here, or click to browse
+        Drop one or more files here, or click to browse
       </p>
       <p className="text-xs text-white/25">mp4 · mov · mp3 · m4a · wav · …</p>
     </div>
