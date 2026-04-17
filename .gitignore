@@ -26,3 +26,6 @@ npm-debug.log*
 
 # Local Claude Code settings (per-machine)
 .claude/settings.local.json
+
+# Git worktrees
+.worktrees/
