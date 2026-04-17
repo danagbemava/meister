@@ -143,8 +143,8 @@ pub struct Recording {
     #[serde(rename = "projectId")]
     pub project_id: String,
     pub name: String,
-    #[serde(rename = "sourcePath")]
-    pub source_path: String,
+    #[serde(rename = "sourcePaths")]
+    pub source_paths: Vec<String>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
     #[serde(rename = "updatedAt")]

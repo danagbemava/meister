@@ -173,13 +173,14 @@ pub async fn run_recording(
             .find(|s| s.stage == stage_kind)
             .ok_or_else(|| format!("stage row missing: {:?}", stage_kind))?;
 
+        let first_source = rec.source_paths.first().map(String::as_str).unwrap_or("");
         let reusable = matches!(stage.status, storage::StageStatus::Completed)
             && inputs_unchanged(
                 stage_kind,
                 stage,
                 &rec.settings,
                 &template_hash,
-                &rec.source_path,
+                first_source,
                 wav_exists,
             );
 
@@ -201,7 +202,8 @@ pub async fn run_recording(
 
         let result = match stage_kind {
             StageKind::Extract => {
-                run_extract(&rec.source_path, &wav_path).await
+                let src = rec.source_paths.first().map(String::as_str).unwrap_or("");
+                run_extract(src, &wav_path).await
                     .map(|_| storage::stages::CompletedOutput {
                         output: None,
                         model_used: None,

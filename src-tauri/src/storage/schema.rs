@@ -3,7 +3,7 @@
 
 use rusqlite::Connection;
 
-const CURRENT_VERSION: i32 = 1;
+const CURRENT_VERSION: i32 = 2;
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     let mut version: i32 = conn
@@ -13,6 +13,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     while version < CURRENT_VERSION {
         match version {
             0 => migrate_v0_to_v1(conn)?,
+            1 => migrate_v1_to_v2(conn)?,
             n => return Err(format!("no migration from version {n}")),
         }
         version += 1;
@@ -62,4 +63,15 @@ fn migrate_v0_to_v1(conn: &Connection) -> Result<(), String> {
         "#,
     )
     .map_err(|e| format!("apply v1 schema: {e}"))
+}
+
+fn migrate_v1_to_v2(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        r#"
+        ALTER TABLE recordings ADD COLUMN source_paths TEXT;
+        UPDATE recordings SET source_paths = json_array(source_path);
+        ALTER TABLE recordings DROP COLUMN source_path;
+        "#,
+    )
+    .map_err(|e| format!("apply v2 schema: {e}"))
 }

@@ -74,7 +74,7 @@ fn sample_recording(project_id: &str) -> Recording {
         id: "r1".to_string(),
         project_id: project_id.to_string(),
         name: "kickoff".to_string(),
-        source_path: "/tmp/kickoff.mp4".to_string(),
+        source_paths: vec!["/tmp/kickoff.mp4".to_string()],
         created_at: 1_500,
         updated_at: 1_500,
         settings: default_settings(),
@@ -255,7 +255,7 @@ fn invalidating_transcribe_resets_format_and_save() {
     let template_hash = storage::template_hash("# Minutes\n");
     let valid = orchestrator::inputs_unchanged(
         StageKind::Transcribe, transcribe, &rec.settings,
-        &template_hash, &rec.source_path, true,
+        &template_hash, rec.source_paths.first().map(String::as_str).unwrap_or(""), true,
     );
     assert!(!valid);
 

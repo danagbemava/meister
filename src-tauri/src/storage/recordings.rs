@@ -8,12 +8,14 @@ pub fn insert(store: &Store, r: &Recording) -> Result<(), String> {
     let conn = store.conn.lock().unwrap();
     let settings_json = serde_json::to_string(&r.settings)
         .map_err(|e| format!("serialize settings: {e}"))?;
+    let source_paths_json = serde_json::to_string(&r.source_paths)
+        .map_err(|e| format!("serialize source_paths: {e}"))?;
     conn.execute(
         "INSERT INTO recordings \
-         (id, project_id, name, source_path, created_at, updated_at, settings) \
+         (id, project_id, name, source_paths, created_at, updated_at, settings) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
-            r.id, r.project_id, r.name, r.source_path,
+            r.id, r.project_id, r.name, source_paths_json,
             r.created_at, r.updated_at, settings_json,
         ],
     )
@@ -33,11 +35,13 @@ pub fn update(store: &Store, r: &Recording) -> Result<(), String> {
     let conn = store.conn.lock().unwrap();
     let settings_json = serde_json::to_string(&r.settings)
         .map_err(|e| format!("serialize settings: {e}"))?;
+    let source_paths_json = serde_json::to_string(&r.source_paths)
+        .map_err(|e| format!("serialize source_paths: {e}"))?;
     let n = conn.execute(
         "UPDATE recordings SET \
-         name = ?2, source_path = ?3, updated_at = ?4, settings = ?5 \
+         name = ?2, source_paths = ?3, updated_at = ?4, settings = ?5 \
          WHERE id = ?1",
-        params![r.id, r.name, r.source_path, r.updated_at, settings_json],
+        params![r.id, r.name, source_paths_json, r.updated_at, settings_json],
     )
     .map_err(|e| format!("update recording: {e}"))?;
     if n == 0 {
@@ -50,7 +54,7 @@ pub fn get(store: &Store, id: &str) -> Result<Option<Recording>, String> {
     let conn = store.conn.lock().unwrap();
     let mut stmt = conn
         .prepare(
-            "SELECT id, project_id, name, source_path, created_at, updated_at, settings \
+            "SELECT id, project_id, name, source_paths, created_at, updated_at, settings \
              FROM recordings WHERE id = ?1",
         )
         .map_err(|e| format!("prepare: {e}"))?;
@@ -69,7 +73,7 @@ pub fn list_by_project(store: &Store, project_id: &str) -> Result<Vec<Recording>
     let conn = store.conn.lock().unwrap();
     let mut stmt = conn
         .prepare(
-            "SELECT id, project_id, name, source_path, created_at, updated_at, settings \
+            "SELECT id, project_id, name, source_paths, created_at, updated_at, settings \
              FROM recordings WHERE project_id = ?1 ORDER BY created_at ASC",
         )
         .map_err(|e| format!("prepare: {e}"))?;
@@ -93,6 +97,9 @@ pub fn delete(store: &Store, id: &str) -> Result<(), String> {
 }
 
 fn row_to_recording_without_stages(row: &rusqlite::Row) -> Result<Recording, String> {
+    let source_paths_json: String = row.get(3).map_err(|e| format!("source_paths: {e}"))?;
+    let source_paths: Vec<String> = serde_json::from_str(&source_paths_json)
+        .map_err(|e| format!("parse source_paths: {e}"))?;
     let settings_json: String = row.get(6).map_err(|e| format!("settings: {e}"))?;
     let settings = serde_json::from_str(&settings_json)
         .map_err(|e| format!("parse settings: {e}"))?;
@@ -100,7 +107,7 @@ fn row_to_recording_without_stages(row: &rusqlite::Row) -> Result<Recording, Str
         id: row.get(0).map_err(|e| format!("id: {e}"))?,
         project_id: row.get(1).map_err(|e| format!("project_id: {e}"))?,
         name: row.get(2).map_err(|e| format!("name: {e}"))?,
-        source_path: row.get(3).map_err(|e| format!("source_path: {e}"))?,
+        source_paths,
         created_at: row.get(4).map_err(|e| format!("created_at: {e}"))?,
         updated_at: row.get(5).map_err(|e| format!("updated_at: {e}"))?,
         settings,

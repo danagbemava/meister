@@ -495,7 +495,7 @@ pub async fn create_recording(
     store: tauri::State<'_, Arc<Store>>,
     project_id: String,
     name: String,
-    source_path: String,
+    source_paths: Vec<String>,
     settings: AppSettings,
 ) -> Result<Recording, String> {
     let store = (*store).clone();
@@ -506,14 +506,13 @@ pub async fn create_recording(
             id,
             project_id,
             name,
-            source_path,
+            source_paths,
             created_at: now,
             updated_at: now,
             settings,
             stages: vec![],
         };
         storage::recordings::insert(&store, &r)?;
-        // Re-read to pick up the auto-initialized stage rows.
         storage::recordings::get(&store, &r.id)?
             .ok_or_else(|| "recording vanished after insert".to_string())
     })
