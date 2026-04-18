@@ -46,6 +46,14 @@ pub fn run() {
             if swept > 0 {
                 eprintln!("storage: marked {swept} interrupted stage(s) as failed");
             }
+
+            let captures_dir = app_data_dir.join("captures");
+            match storage::cleanup_orphaned_captures(&store, &captures_dir) {
+                Ok(n) if n > 0 => eprintln!("storage: removed {n} orphaned capture file(s)"),
+                Ok(_) => {}
+                Err(e) => eprintln!("storage: capture cleanup failed (non-fatal): {e}"),
+            }
+
             app.manage(std::sync::Arc::new(store));
 
             Ok(())
@@ -55,6 +63,7 @@ pub fn run() {
             commands::list_ollama_models,
             commands::save_text_file,
             commands::save_binary_file,
+            commands::save_capture,
             commands::read_file_as_text,
             commands::list_available_models,
             commands::download_model,
