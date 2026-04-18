@@ -369,3 +369,67 @@ fn recordings_store_source_paths_list_preserves_order() {
     let loaded = storage::recordings::get(&store, "r1").unwrap().unwrap();
     assert_eq!(loaded.source_paths, paths);
 }
+
+#[test]
+fn cleanup_orphaned_captures_deletes_unreferenced_files() {
+    use std::fs;
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let keep = dir.path().join("keep.webm");
+    let drop1 = dir.path().join("drop1.webm");
+    let drop2 = dir.path().join("drop2.webm");
+    fs::write(&keep, b"k").unwrap();
+    fs::write(&drop1, b"d1").unwrap();
+    fs::write(&drop2, b"d2").unwrap();
+
+    let mut r = sample_recording("p1");
+    r.source_paths = vec![keep.to_string_lossy().to_string()];
+    storage::recordings::insert(&store, &r).unwrap();
+
+    let removed = storage::cleanup_orphaned_captures(&store, dir.path()).unwrap();
+    assert_eq!(removed, 2);
+    assert!(keep.exists());
+    assert!(!drop1.exists());
+    assert!(!drop2.exists());
+}
+
+#[test]
+fn cleanup_orphaned_captures_handles_missing_dir() {
+    let store = Store::open_memory().unwrap();
+    let bogus = std::path::PathBuf::from("/definitely/not/a/real/path/xxxyyy");
+    let removed = storage::cleanup_orphaned_captures(&store, &bogus).unwrap();
+    assert_eq!(removed, 0);
+}
+
+#[test]
+fn cleanup_orphaned_captures_ignores_referenced_files_across_many_recordings() {
+    use std::fs;
+    let store = Store::open_memory().unwrap();
+    storage::projects::insert(&store, &sample_project()).unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.webm");
+    let b = dir.path().join("b.webm");
+    let c = dir.path().join("c.webm");
+    for p in [&a, &b, &c] {
+        fs::write(p, b"x").unwrap();
+    }
+
+    let mut r1 = sample_recording("p1");
+    r1.id = "r1".to_string();
+    r1.source_paths = vec![a.to_string_lossy().to_string(), b.to_string_lossy().to_string()];
+    storage::recordings::insert(&store, &r1).unwrap();
+
+    let mut r2 = sample_recording("p1");
+    r2.id = "r2".to_string();
+    r2.source_paths = vec![c.to_string_lossy().to_string()];
+    storage::recordings::insert(&store, &r2).unwrap();
+
+    let removed = storage::cleanup_orphaned_captures(&store, dir.path()).unwrap();
+    assert_eq!(removed, 0);
+    for p in [a, b, c] {
+        assert!(p.exists());
+    }
+}

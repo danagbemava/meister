@@ -46,6 +46,47 @@ impl Store {
     }
 }
 
+/// Scan `captures_dir` and delete any files whose paths are NOT present in any
+/// recording's `source_paths`. Safe to call at startup. Returns the number of
+/// files removed. Missing directories are treated as "nothing to clean".
+pub fn cleanup_orphaned_captures(store: &Store, captures_dir: &Path) -> Result<usize, String> {
+    let entries = match std::fs::read_dir(captures_dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(0),
+    };
+
+    let referenced: std::collections::HashSet<String> = {
+        let conn = store.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT source_paths FROM recordings")
+            .map_err(|e| format!("prepare: {e}"))?;
+        let set: std::collections::HashSet<String> = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| format!("query: {e}"))?
+            .filter_map(Result::ok)
+            .flat_map(|json| {
+                serde_json::from_str::<Vec<String>>(&json).unwrap_or_default()
+            })
+            .collect();
+        set
+    };
+
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let s = path.to_string_lossy().to_string();
+        if !referenced.contains(&s) {
+            if std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
