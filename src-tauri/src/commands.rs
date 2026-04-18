@@ -309,6 +309,69 @@ Produce the formatted document now:"#,
 
 // ── File I/O ───────────────────────────────────────────────────────────────────
 
+/// Write a capture blob to the given directory. Filename format:
+/// `capture-YYYYMMDD-HHMMSS-<8-hex>.webm`. Returns the full path.
+pub fn write_capture_to(
+    dir: &std::path::Path,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("create captures dir: {e}"))?;
+
+    let ts = {
+        let secs_since_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format_utc_timestamp(secs_since_epoch)
+    };
+    let full = uuid::Uuid::new_v4().simple().to_string();
+    let short = &full[..8];
+    let filename = format!("capture-{ts}-{short}.webm");
+    let path = dir.join(filename);
+    std::fs::write(&path, bytes)
+        .map_err(|e| format!("write capture: {e}"))?;
+    Ok(path)
+}
+
+/// Return `YYYYMMDD-HHMMSS` for a given unix timestamp (UTC).
+fn format_utc_timestamp(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let sod = secs % 86_400;
+    let hh = sod / 3_600;
+    let mm = (sod % 3_600) / 60;
+    let ss = sod % 60;
+
+    // Civil calendar from days-since-epoch (Howard Hinnant).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}{m:02}{d:02}-{hh:02}{mm:02}{ss:02}")
+}
+
+/// Save a captured audio Blob (raw bytes) into the app data dir.
+/// Returns the absolute path of the written file.
+#[tauri::command]
+pub async fn save_capture(
+    app: AppHandle,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    use tauri::Manager;
+    let dir = app.path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?
+        .join("captures");
+    let path = write_capture_to(&dir, &bytes)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 /// Write a UTF-8 text file (for .md and .txt outputs).
 #[tauri::command]
 pub async fn save_text_file(content: String, path: String) -> Result<(), String> {
@@ -693,5 +756,35 @@ mod build_ffmpeg_args_tests {
         let args = build_ffmpeg_args(&paths, &out);
         let filter_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
         assert_eq!(args[filter_idx + 1], "[0:a][1:a]concat=n=2:v=0:a=1[out]");
+    }
+}
+
+#[cfg(test)]
+mod write_capture_tests {
+    use super::write_capture_to;
+    use tempfile::tempdir;
+
+    #[test]
+    fn writes_bytes_and_returns_webm_path_under_dir() {
+        let dir = tempdir().unwrap();
+        let bytes = b"opus-bytes-here".to_vec();
+        let path = write_capture_to(dir.path(), &bytes).unwrap();
+
+        assert!(path.starts_with(dir.path()));
+        assert_eq!(path.extension().and_then(|s| s.to_str()), Some("webm"));
+
+        let on_disk = std::fs::read(&path).unwrap();
+        assert_eq!(on_disk, bytes);
+
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap();
+        assert!(name.starts_with("capture-"), "name should start with 'capture-': {name}");
+    }
+
+    #[test]
+    fn returns_unique_paths_on_repeated_calls() {
+        let dir = tempdir().unwrap();
+        let p1 = write_capture_to(dir.path(), b"a").unwrap();
+        let p2 = write_capture_to(dir.path(), b"b").unwrap();
+        assert_ne!(p1, p2, "same dir + separate calls should produce different paths");
     }
 }
