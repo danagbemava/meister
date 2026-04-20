@@ -2,6 +2,7 @@ mod commands;
 pub mod transcription;
 pub mod storage;
 pub mod orchestrator;
+pub mod capture;
 
 use tauri::Manager;
 
