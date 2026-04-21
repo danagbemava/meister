@@ -29,7 +29,14 @@ export default function RecordingView({
   const [rec, setRec] = useState<Recording | null>(null);
   const [running, setRunning] = useState(false);
   const [transcribePct, setTranscribePct] = useState(0);
-  const [formatChars, setFormatChars] = useState(0);
+  type FormatPhase = "single" | "map" | "reduce";
+  type FormatProgressPayload = {
+    phase: FormatPhase;
+    chunk: { index: number; total: number; completed: number } | null;
+    chars: number;
+    done: boolean;
+  };
+  const [formatProgress, setFormatProgress] = useState<FormatProgressPayload | null>(null);
   const [missingByPath, setMissingByPath] = useState<Record<string, boolean>>({});
   const [renamingRec, setRenamingRec] = useState(false);
   const [draftRecName, setDraftRecName] = useState("");
@@ -79,8 +86,8 @@ export default function RecordingView({
     listen<{ percent: number }>("transcribe-progress", (e) =>
       setTranscribePct(e.payload.percent)
     ).then((fn) => { unlisten1 = fn; });
-    listen<{ chars: number }>("format-progress", (e) =>
-      setFormatChars(e.payload.chars)
+    listen<FormatProgressPayload>("format-progress", (e) =>
+      setFormatProgress(e.payload)
     ).then((fn) => { unlisten2 = fn; });
     return () => { unlisten1?.(); unlisten2?.(); };
   }, []);
@@ -110,7 +117,7 @@ export default function RecordingView({
   const run = async () => {
     setRunning(true);
     setTranscribePct(0);
-    setFormatChars(0);
+    setFormatProgress(null);
     try {
       await api.runRecording(recordingId);
       await reload();
@@ -298,8 +305,31 @@ export default function RecordingView({
           savedPaths={savedPaths}
         />
 
-        {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatChars > 0 && (
-          <p className="text-xs text-white/40">Formatting… {formatChars.toLocaleString()} chars</p>
+        {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
+          <div className="text-xs text-white/40 space-y-1">
+            {formatProgress.phase === "single" && (
+              <p>Formatting… {formatProgress.chars.toLocaleString()} chars</p>
+            )}
+            {formatProgress.phase === "map" && formatProgress.chunk && (
+              <>
+                <p>
+                  Analyzing chunk {Math.min(formatProgress.chunk.completed + 1, formatProgress.chunk.total)}/
+                  {formatProgress.chunk.total}…
+                </p>
+                <div className="h-1 w-full bg-white/5 rounded">
+                  <div
+                    className="h-1 bg-white/30 rounded"
+                    style={{
+                      width: `${(formatProgress.chunk.completed / formatProgress.chunk.total) * 100}%`,
+                    }}
+                  />
+                </div>
+              </>
+            )}
+            {formatProgress.phase === "reduce" && (
+              <p>Composing output… {formatProgress.chars.toLocaleString()} chars</p>
+            )}
+          </div>
         )}
       </div>
 
