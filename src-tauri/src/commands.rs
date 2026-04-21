@@ -690,6 +690,62 @@ pub fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
 }
 
+// ── Call capture commands ─────────────────────────────────────────────────
+
+use crate::capture::{self, CallCaptureRegistry, StartCallCaptureResult};
+
+#[tauri::command]
+pub async fn start_call_capture(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<CallCaptureRegistry>>,
+    include_mic: bool,
+) -> Result<StartCallCaptureResult, String> {
+    use tauri::Manager;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    let registry = (*registry).clone();
+    tokio::task::spawn_blocking(move || {
+        capture::begin_session(&registry, &app_data_dir, include_mic)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn discard_call_capture(
+    registry: tauri::State<'_, Arc<CallCaptureRegistry>>,
+    session_id: String,
+) -> Result<(), String> {
+    let registry = (*registry).clone();
+    tokio::task::spawn_blocking(move || capture::discard_session(&registry, &session_id))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn pause_call_capture(
+    registry: tauri::State<'_, Arc<CallCaptureRegistry>>,
+    session_id: String,
+) -> Result<(), String> {
+    let registry = (*registry).clone();
+    tokio::task::spawn_blocking(move || capture::set_paused(&registry, &session_id, true))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn resume_call_capture(
+    registry: tauri::State<'_, Arc<CallCaptureRegistry>>,
+    session_id: String,
+) -> Result<(), String> {
+    let registry = (*registry).clone();
+    tokio::task::spawn_blocking(move || capture::set_paused(&registry, &session_id, false))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
 #[cfg(test)]
 mod build_ffmpeg_args_tests {
     use super::build_ffmpeg_args;

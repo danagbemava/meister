@@ -56,6 +56,7 @@ pub fn run() {
             }
 
             app.manage(std::sync::Arc::new(store));
+            app.manage(std::sync::Arc::new(capture::CallCaptureRegistry::new()));
 
             Ok(())
         })
@@ -81,6 +82,10 @@ pub fn run() {
             commands::start_over_recording,
             commands::record_saved_outputs,
             commands::path_exists,
+            commands::start_call_capture,
+            commands::pause_call_capture,
+            commands::resume_call_capture,
+            commands::discard_call_capture,
             orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())
