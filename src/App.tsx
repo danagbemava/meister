@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ProjectView from "./components/ProjectView";
@@ -28,6 +28,24 @@ export default function App() {
     setRecordingsByProject((prev) => ({ ...prev, [projectId]: list }));
   }, []);
 
+  const activeCaptureRef = useRef<null | (() => void)>(null);
+
+  const registerActiveCapture = useCallback(
+    (discard: (() => void) | null) => {
+      activeCaptureRef.current = discard;
+    },
+    [],
+  );
+
+  const guardedSelect = useCallback((next: Selection) => {
+    if (activeCaptureRef.current) {
+      if (!confirm("Recording in progress — stop and discard?")) return;
+      activeCaptureRef.current();
+      activeCaptureRef.current = null;
+    }
+    setSelection(next);
+  }, []);
+
   useEffect(() => {
     refreshProjects().finally(() => setLoadingProjects(false));
   }, [refreshProjects]);
@@ -48,10 +66,10 @@ export default function App() {
           projects={projects}
           recordingsByProject={recordingsByProject}
           selection={selection}
-          onSelect={setSelection}
+          onSelect={guardedSelect}
           onProjectsChanged={refreshProjects}
           onPickFilesForProject={(projectId, paths) => {
-            setSelection({ kind: "project", projectId });
+            guardedSelect({ kind: "project", projectId });
             setPendingStagedPaths({ projectId, paths });
           }}
         />
@@ -73,6 +91,7 @@ export default function App() {
                   : undefined
               }
               onInitialStagedConsumed={() => setPendingStagedPaths(null)}
+              onCaptureActiveChange={registerActiveCapture}
             />
           )}
           {selection.kind === "recording" && (
