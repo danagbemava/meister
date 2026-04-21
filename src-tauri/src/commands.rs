@@ -314,15 +314,25 @@ fn collapse_stutters(input: &str) -> String {
     result
 }
 
-/// Token-count thresholds (approx: 1 token ≈ 4 chars).
+/// Token-count thresholds.
 pub(crate) const THRESHOLD: usize = 4000;
 pub(crate) const CHUNK_TARGET: usize = 3000;
 pub(crate) const CHUNK_OVERLAP: usize = 200;
+/// Approximation: 1 token ≈ 4 chars.
 const CHARS_PER_TOKEN: usize = 4;
 const BOUNDARY_SEARCH_WINDOW_CHARS: usize = 500;
 
 fn approx_tokens(s: &str) -> usize {
     s.chars().count() / CHARS_PER_TOKEN
+}
+
+/// Advance `i` forward until it lands on a UTF-8 char boundary, then clamp to
+/// `s.len()`. Ensures byte-offset slices into `s` never split a codepoint.
+fn snap_to_char_boundary(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i.min(s.len())
 }
 
 /// Split a cleaned transcript into chunks at sentence boundaries, with a
@@ -343,6 +353,7 @@ pub(crate) fn split_into_chunks(input: &str) -> Vec<String> {
     let mut start: usize = 0; // byte index
 
     while start < len {
+        debug_assert!(input.is_char_boundary(start));
         let remaining = &input[start..];
         if remaining.len() <= target_chars + search_window {
             chunks.push(prepend_overlap(&chunks, remaining));
@@ -351,10 +362,8 @@ pub(crate) fn split_into_chunks(input: &str) -> Vec<String> {
 
         let target = target_chars.min(remaining.len());
 
-        // Search for a sentence terminator (.?!) followed by whitespace in
-        // [target - search_window, target + search_window].
-        let lo = target.saturating_sub(search_window);
-        let hi = (target + search_window).min(remaining.len());
+        let lo = snap_to_char_boundary(remaining, target.saturating_sub(search_window));
+        let hi = snap_to_char_boundary(remaining, (target + search_window).min(remaining.len()));
         let window = &remaining[lo..hi];
 
         let split_rel = find_last_sentence_boundary(window)
@@ -365,7 +374,6 @@ pub(crate) fn split_into_chunks(input: &str) -> Vec<String> {
         let body = &remaining[..split_abs];
         chunks.push(prepend_overlap(&chunks, body));
 
-        // Skip any whitespace at the split point so the next chunk starts cleanly.
         let mut next = start + split_abs;
         while next < len && matches!(bytes[next], b' ' | b'\t' | b'\n' | b'\r') {
             next += 1;
@@ -398,7 +406,8 @@ fn find_last_sentence_boundary(s: &str) -> Option<usize> {
 }
 
 fn find_last_whitespace(s: &str) -> Option<usize> {
-    s.rfind(|c: char| c.is_whitespace()).map(|i| i + 1)
+    s.rfind(|c: char| c.is_whitespace())
+        .map(|i| i + s[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1))
 }
 
 /// Prepend CHUNK_OVERLAP tokens' worth of tail from the last existing chunk
@@ -954,6 +963,23 @@ mod tests {
         if let Some(marker) = words.iter().rev().find(|w| w.len() > 3).copied() {
             let head1 = &chunks[1][..chunks[1].len().min(CHUNK_OVERLAP * 4 + 100)];
             assert!(head1.contains(marker), "chunk 1 head missing overlap marker {marker:?}");
+        } else {
+            panic!("test setup should produce a distinctive marker word");
+        }
+    }
+
+    #[test]
+    fn split_handles_multibyte_chars_without_panic() {
+        // A long input whose char positions around CHUNK_TARGET fall on multi-byte
+        // codepoints (em-dash, smart quote, accented letters). Must not panic.
+        let chunk = "Café — \u{201C}résumé\u{201D} naïve déjà vu. ";
+        let input: String = chunk.repeat(1000); // > THRESHOLD in chars
+        let chunks = split_into_chunks(&input);
+        assert!(chunks.len() >= 2);
+        // Reconstruct lossily and confirm no char was cut in half.
+        for c in chunks.iter() {
+            assert!(c.is_char_boundary(0) && c.is_char_boundary(c.len()));
+            assert!(std::str::from_utf8(c.as_bytes()).is_ok());
         }
     }
 }
