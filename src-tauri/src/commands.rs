@@ -1520,6 +1520,30 @@ mod tests {
         let reduce_call = calls.iter().rev().find(|c| c["prompt"].as_str().unwrap().contains("expert document formatter")).unwrap();
         assert_eq!(reduce_call["options"]["num_ctx"], 12288);
     }
+
+    #[tokio::test]
+    async fn cache_hit_short_circuits_second_call() {
+        let mock = MockOllama::spawn(|_b| "FORMATTED".to_string()).await;
+        let tmp = tempfile::tempdir().unwrap();
+
+        run_format_core("t", "tpl", &mock.base_url, "gemma3", tmp.path(), noop_progress()).await.unwrap();
+        run_format_core("t", "tpl", &mock.base_url, "gemma3", tmp.path(), noop_progress()).await.unwrap();
+
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1, "second run should have hit the cache");
+    }
+
+    #[tokio::test]
+    async fn cache_miss_on_model_change() {
+        let mock = MockOllama::spawn(|_b| "FORMATTED".to_string()).await;
+        let tmp = tempfile::tempdir().unwrap();
+
+        run_format_core("t", "tpl", &mock.base_url, "modelA", tmp.path(), noop_progress()).await.unwrap();
+        run_format_core("t", "tpl", &mock.base_url, "modelB", tmp.path(), noop_progress()).await.unwrap();
+
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+    }
 }
 
 #[cfg(test)]
