@@ -2179,6 +2179,7 @@ dependencies = [
  "anyhow",
  "futures-util",
  "hound",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

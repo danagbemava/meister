@@ -160,6 +160,12 @@ struct ModelWarming {
 }
 
 /// Run whisper on an already-extracted WAV. Returns the transcript text.
+///
+/// Emits `transcribe-progress` events with a percent scaled across the whole
+/// batch: source `source_idx` of `total_sources` contributes `1/total_sources`
+/// of the overall progress. The caller is responsible for the outer loop over
+/// sources. The final "complete" event (percent=100) fires only on the last
+/// source; intermediate sources leave the bar where they ended.
 pub async fn run_transcribe(
     app: &AppHandle,
     wav_path: &std::path::Path,
@@ -209,6 +215,121 @@ pub async fn run_transcribe(
     result
 }
 
+
+// ── Formatting pipeline ────────────────────────────────────────────────────────
+
+/// Conservative text cleanup applied before sending a transcript to the
+/// formatter. Strips well-known filler tokens and 3+ stutters; normalizes
+/// whitespace while preserving paragraph breaks; normalizes em-dashes and
+/// ellipses. Idempotent.
+pub(crate) fn preprocess(input: &str) -> String {
+    use std::sync::OnceLock;
+    static FILLER_RE: OnceLock<regex::Regex> = OnceLock::new();
+    static PARA_RE: OnceLock<regex::Regex> = OnceLock::new();
+    static WS_RE: OnceLock<regex::Regex> = OnceLock::new();
+
+    // Step 1: normalize dashes and ellipsis so later patterns are simpler.
+    let mut s = input.replace('—', "-").replace('…', "...");
+
+    // Step 2: strip standalone fillers. `(?i)` = case-insensitive.
+    // `\b` boundaries mean "Uber", "umbrella", "Ahmad" are safe.
+    let filler = FILLER_RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)\b(uh|um|uhm|er|erm|hmm|ah)\b[,.!?]?\s*").unwrap()
+    });
+    s = filler.replace_all(&s, "").to_string();
+
+    // Step 3: collapse 3+ same-word stutters to a single instance.
+    // The regex crate doesn't support backreferences, so we use a token scan:
+    // split on whitespace-preserving boundaries, track consecutive identical
+    // words (case-insensitive), and keep only the first when a run of 3+.
+    s = collapse_stutters(&s);
+
+    // Step 4: paragraph breaks → exactly "\n\n"; other whitespace runs → " ".
+    let para = PARA_RE.get_or_init(|| regex::Regex::new(r"\n\s*\n\s*").unwrap());
+    s = para.replace_all(&s, "\u{0000}").to_string(); // placeholder for para break
+    let ws = WS_RE.get_or_init(|| regex::Regex::new(r"\s+").unwrap());
+    s = ws.replace_all(&s, " ").to_string();
+    s = s.replace('\u{0000}', "\n\n");
+
+    s.trim().to_string()
+}
+
+/// Collapse runs of 3+ identical words (case-insensitive) down to a single
+/// instance, preserving the first word's casing. Two consecutive identical
+/// words ("very very") are kept as-is (emphasis).
+fn collapse_stutters(input: &str) -> String {
+    // Tokenize into alternating (word, gap) pairs so we can reconstruct the
+    // string with original spacing. Leading whitespace is emitted verbatim.
+    struct Token<'a> {
+        word: &'a str,
+        gap: &'a str, // whitespace immediately after this word
+    }
+
+    let mut tokens: Vec<Token<'_>> = Vec::new();
+    let len = input.len();
+
+    // Collect leading whitespace so we can emit it unchanged.
+    let leading_end = input
+        .char_indices()
+        .find(|(_, c)| !c.is_whitespace())
+        .map(|(idx, _)| idx)
+        .unwrap_or(len);
+    let mut i = leading_end;
+
+    while i < len {
+        // Consume a non-whitespace run (the "word").
+        let word_start = i;
+        while i < len {
+            let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+            if input[i..].starts_with(|c: char| c.is_whitespace()) {
+                break;
+            }
+            i += ch_len;
+        }
+        let word = &input[word_start..i];
+
+        // Consume the trailing whitespace (the "gap").
+        let gap_start = i;
+        while i < len && input[i..].starts_with(|c: char| c.is_whitespace()) {
+            let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+            i += ch_len;
+        }
+        let gap = &input[gap_start..i];
+
+        if !word.is_empty() {
+            tokens.push(Token { word, gap });
+        }
+    }
+
+    // Walk tokens, collapsing runs of 3+ identical words to one.
+    let mut result = String::with_capacity(input.len());
+    result.push_str(&input[..leading_end]);
+    let mut t = 0;
+    while t < tokens.len() {
+        let word = tokens[t].word;
+        let word_lc = word.to_lowercase();
+        let mut run = 1;
+        while t + run < tokens.len() && tokens[t + run].word.to_lowercase() == word_lc {
+            run += 1;
+        }
+        if run >= 3 {
+            // Collapse to one: emit the first word, then the gap after the
+            // last repeated token so downstream spacing is preserved.
+            result.push_str(word);
+            result.push_str(tokens[t + run - 1].gap);
+            t += run;
+        } else {
+            // No collapse — emit each token in the run individually.
+            for tok in &tokens[t..t + run] {
+                result.push_str(tok.word);
+                result.push_str(tok.gap);
+            }
+            t += run;
+        }
+    }
+
+    result
+}
 
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
@@ -628,15 +749,70 @@ pub fn path_exists(path: String) -> bool {
 }
 
 #[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preprocess_strips_standalone_fillers() {
+        let input = "Um, so I think, uh, we should go. Ah, okay.";
+        let out = preprocess(input);
+        assert!(!out.to_lowercase().contains(" um"));
+        assert!(!out.to_lowercase().contains(" uh"));
+        assert!(!out.to_lowercase().contains(" ah"));
+        assert!(out.contains("I think"));
+        assert!(out.contains("we should go"));
+    }
+
+    #[test]
+    fn preprocess_preserves_substrings_that_look_like_fillers() {
+        let input = "Uber driver brought an umbrella. Also: Ahmad came.";
+        let out = preprocess(input);
+        assert!(out.contains("Uber"));
+        assert!(out.contains("umbrella"));
+        assert!(out.contains("Ahmad"));
+    }
+
+    #[test]
+    fn preprocess_collapses_3plus_stutters() {
+        assert_eq!(preprocess("I I I went"), "I went");
+        assert_eq!(preprocess("the the the the end"), "the end");
+    }
+
+    #[test]
+    fn preprocess_keeps_2x_repeats_as_emphasis() {
+        assert_eq!(preprocess("very very good"), "very very good");
+    }
+
+    #[test]
+    fn preprocess_normalizes_whitespace_preserving_paragraph_breaks() {
+        let input = "line one\nstill one.\n\n\nnew para.";
+        let out = preprocess(input);
+        assert_eq!(out, "line one still one.\n\nnew para.");
+    }
+
+    #[test]
+    fn preprocess_normalizes_dashes_and_ellipsis() {
+        assert_eq!(preprocess("first — second … third"), "first - second ... third");
+    }
+
+    #[test]
+    fn preprocess_is_idempotent() {
+        let input = "Um, so — I I I said, uhm, maybe…\n\n\nThat's it.";
+        let once = preprocess(input);
+        let twice = preprocess(&once);
+        assert_eq!(once, twice);
+    }
+}
+
+#[cfg(test)]
 mod build_ffmpeg_args_tests {
     use super::build_ffmpeg_args;
     use std::path::PathBuf;
 
     #[test]
-    fn single_file_uses_simple_vn_shape() {
-        let paths = vec!["/a.mp4".to_string()];
+    fn single_input_uses_simple_vn_shape() {
         let out = PathBuf::from("/tmp/out.wav");
-        let args = build_ffmpeg_args(&paths, &out);
+        let args = build_ffmpeg_args("/a.mp4", &out);
         assert_eq!(
             args,
             vec![
@@ -656,42 +832,10 @@ mod build_ffmpeg_args_tests {
     }
 
     #[test]
-    fn multi_file_uses_concat_filter() {
-        let paths = vec![
-            "/a.mp4".to_string(),
-            "/b.mov".to_string(),
-            "/c.mp3".to_string(),
-        ];
+    fn input_path_with_spaces_is_passed_as_single_arg() {
         let out = PathBuf::from("/tmp/out.wav");
-        let args = build_ffmpeg_args(&paths, &out);
-
-        let input_count = args.iter().filter(|a| *a == "-i").count();
-        assert_eq!(input_count, 3);
-
-        let filter_idx = args
-            .iter()
-            .position(|a| a == "-filter_complex")
-            .expect("should have filter_complex");
-        assert_eq!(
-            args[filter_idx + 1],
-            "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]"
-        );
-
-        let map_idx = args.iter().position(|a| a == "-map").expect("should have -map");
-        assert_eq!(args[map_idx + 1], "[out]");
-
-        assert!(args.windows(2).any(|w| w[0] == "-acodec" && w[1] == "pcm_s16le"));
-        assert!(args.windows(2).any(|w| w[0] == "-ar" && w[1] == "16000"));
-        assert!(args.windows(2).any(|w| w[0] == "-ac" && w[1] == "1"));
-        assert_eq!(args.last().unwrap(), "/tmp/out.wav");
-    }
-
-    #[test]
-    fn two_file_concat_string_is_well_formed() {
-        let paths = vec!["/a.mp4".to_string(), "/b.mp4".to_string()];
-        let out = PathBuf::from("/tmp/out.wav");
-        let args = build_ffmpeg_args(&paths, &out);
-        let filter_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert_eq!(args[filter_idx + 1], "[0:a][1:a]concat=n=2:v=0:a=1[out]");
+        let args = build_ffmpeg_args("/Users/n/Movies/2026-04-16 20-06-30.mov", &out);
+        let i_idx = args.iter().position(|a| a == "-i").unwrap();
+        assert_eq!(args[i_idx + 1], "/Users/n/Movies/2026-04-16 20-06-30.mov");
     }
 }
