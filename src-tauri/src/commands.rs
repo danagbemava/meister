@@ -1480,6 +1480,46 @@ mod tests {
         assert_eq!(calls[0]["options"]["num_ctx"], 8192);
         assert_eq!(calls[0]["options"]["num_predict"], -1);
     }
+
+    #[tokio::test]
+    async fn map_reduce_path_issues_N_plus_1_calls_with_concurrency() {
+        let sentence = "This is a long sentence that will get split eventually. ";
+        let transcript: String = sentence.repeat(500);
+
+        let mock = MockOllama::spawn(|body| {
+            let prompt = body["prompt"].as_str().unwrap_or("");
+            if prompt.contains("You are an expert note-taker") {
+                "NOTES for this segment. ".to_string()
+            } else {
+                "REDUCED OUTPUT. ".to_string()
+            }
+        })
+        .await;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let out = run_format_core(
+            &transcript,
+            "# Template",
+            &mock.base_url,
+            "gemma3",
+            tmp.path(),
+            noop_progress(),
+        )
+        .await
+        .unwrap();
+
+        assert!(out.contains("REDUCED OUTPUT"));
+        let calls = mock.calls.lock().unwrap();
+        assert!(calls.len() >= 3, "expected N+1 (N≥2 map + 1 reduce) calls, got {}", calls.len());
+        let last_prompt = calls.last().unwrap()["prompt"].as_str().unwrap();
+        assert!(last_prompt.contains("expert document formatter"), "last call was not reduce");
+        assert!(mock.overlaps.load(Ordering::SeqCst) >= 1, "no concurrency observed");
+
+        let map_call = calls.iter().find(|c| c["prompt"].as_str().unwrap().contains("note-taker")).unwrap();
+        assert_eq!(map_call["options"]["num_ctx"], 6144);
+        let reduce_call = calls.iter().rev().find(|c| c["prompt"].as_str().unwrap().contains("expert document formatter")).unwrap();
+        assert_eq!(reduce_call["options"]["num_ctx"], 12288);
+    }
 }
 
 #[cfg(test)]
