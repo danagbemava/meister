@@ -5,6 +5,14 @@ fn main() {
     println!("cargo:rerun-if-changed=scripts/fetch-base-model.sh");
     println!("cargo:rerun-if-changed=build.rs");
 
+    if cfg!(target_os = "macos") {
+        if let Some(dir) = find_swift_runtime_dir() {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
+        } else {
+            println!("cargo:warning=could not resolve Swift runtime dir; tests linking Swift (screencapturekit) may fail to load libswift_Concurrency.dylib at runtime");
+        }
+    }
+
     let script = std::path::Path::new("scripts/fetch-base-model.sh");
     if script.exists() {
         let status = Command::new("bash")
@@ -32,6 +40,25 @@ fn main() {
     }
 
     tauri_build::build();
+}
+
+/// Resolve the directory containing `libswift_Concurrency.dylib` (and friends)
+/// so tests and the unbundled binary can load Swift runtime at dev-time.
+/// The install name on screencapturekit's Swift output is @rpath-based, so we
+/// add Xcode's Swift 5.5 back-deployment libs (which always ship these dylibs)
+/// as an rpath. Portable across machines: resolves via `xcode-select -p`.
+fn find_swift_runtime_dir() -> Option<PathBuf> {
+    let dev = Command::new("xcode-select").arg("-p").output().ok()?;
+    if !dev.status.success() { return None; }
+    let dev = String::from_utf8(dev.stdout).ok()?;
+    let dev = dev.trim();
+    let candidate = PathBuf::from(dev)
+        .join("Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/macosx");
+    if candidate.join("libswift_Concurrency.dylib").is_file() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 fn find_metal_shader() -> Option<PathBuf> {
