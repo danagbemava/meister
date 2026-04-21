@@ -4,5 +4,7 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Meister needs microphone access to record audio for transcription.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Meister captures system audio to record calls and meetings for transcription.</string>
 </dict>
 </plist>
