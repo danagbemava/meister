@@ -45,8 +45,12 @@ brew install ollama
 # Pull Gemma (or any other model you prefer)
 ollama pull gemma3
 
-# Start Ollama (keep it running in the background)
-ollama serve
+# Start Ollama (keep it running in the background).
+# OLLAMA_NUM_PARALLEL=3 lets Meister's formatter run chunks concurrently on long
+# transcripts — Meister's map-reduce formatting path fires up to 3 parallel
+# /api/generate calls. At the default of 1 the output is still correct, just
+# slower.
+OLLAMA_NUM_PARALLEL=3 ollama serve
 ```
 
 ---
