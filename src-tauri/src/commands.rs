@@ -620,6 +620,49 @@ async fn map_pass(
     Ok((index, out))
 }
 
+fn stitch_notes(notes: &[(usize, String)]) -> String {
+    let total = notes.len();
+    let mut out = String::new();
+    for (i, body) in notes {
+        out.push_str(&format!("### Notes from part {} of {}\n\n", i + 1, total));
+        out.push_str(body.trim());
+        out.push_str("\n\n");
+    }
+    out.trim_end().to_string()
+}
+
+async fn reduce_pass(
+    ollama_url: &str,
+    model: &str,
+    stitched_notes: &str,
+    template: &str,
+    on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync>,
+) -> Result<String, String> {
+    let prompt = build_prompt(stitched_notes, template);
+    let emit = {
+        let on_progress = on_progress.clone();
+        move |p: FormatProgress| {
+            on_progress(FormatProgress {
+                phase: FormatPhase::Reduce,
+                chunk: None,
+                chars: p.chars,
+                done: false,
+            });
+        }
+    };
+    let emit_boxed: Box<dyn Fn(FormatProgress) + Send + Sync> = Box::new(emit);
+    ollama_generate_stream(
+        ollama_url,
+        model,
+        prompt,
+        12288,
+        FormatPhase::Reduce,
+        None,
+        &*emit_boxed,
+    )
+    .await
+}
+
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, serde::Serialize, PartialEq, Eq, Debug)]
