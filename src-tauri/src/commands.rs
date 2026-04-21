@@ -314,6 +314,109 @@ fn collapse_stutters(input: &str) -> String {
     result
 }
 
+/// Token-count thresholds (approx: 1 token ≈ 4 chars).
+pub(crate) const THRESHOLD: usize = 4000;
+pub(crate) const CHUNK_TARGET: usize = 3000;
+pub(crate) const CHUNK_OVERLAP: usize = 200;
+const CHARS_PER_TOKEN: usize = 4;
+const BOUNDARY_SEARCH_WINDOW_CHARS: usize = 500;
+
+fn approx_tokens(s: &str) -> usize {
+    s.chars().count() / CHARS_PER_TOKEN
+}
+
+/// Split a cleaned transcript into chunks at sentence boundaries, with a
+/// small overlap prefix on each chunk after the first. Single-chunk if the
+/// input is below THRESHOLD tokens.
+pub(crate) fn split_into_chunks(input: &str) -> Vec<String> {
+    if approx_tokens(input) < THRESHOLD {
+        return vec![input.to_string()];
+    }
+
+    let target_chars = CHUNK_TARGET * CHARS_PER_TOKEN;
+    let search_window = BOUNDARY_SEARCH_WINDOW_CHARS;
+
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+
+    let mut chunks: Vec<String> = Vec::new();
+    let mut start: usize = 0; // byte index
+
+    while start < len {
+        let remaining = &input[start..];
+        if remaining.len() <= target_chars + search_window {
+            chunks.push(prepend_overlap(&chunks, remaining));
+            break;
+        }
+
+        let target = target_chars.min(remaining.len());
+
+        // Search for a sentence terminator (.?!) followed by whitespace in
+        // [target - search_window, target + search_window].
+        let lo = target.saturating_sub(search_window);
+        let hi = (target + search_window).min(remaining.len());
+        let window = &remaining[lo..hi];
+
+        let split_rel = find_last_sentence_boundary(window)
+            .or_else(|| find_last_whitespace(window))
+            .unwrap_or(window.len());
+
+        let split_abs = lo + split_rel;
+        let body = &remaining[..split_abs];
+        chunks.push(prepend_overlap(&chunks, body));
+
+        // Skip any whitespace at the split point so the next chunk starts cleanly.
+        let mut next = start + split_abs;
+        while next < len && matches!(bytes[next], b' ' | b'\t' | b'\n' | b'\r') {
+            next += 1;
+        }
+        start = next;
+    }
+
+    chunks
+        .into_iter()
+        .filter(|c| !c.trim().is_empty())
+        .collect()
+}
+
+/// Returns the byte index (within `s`) of the character just after the last
+/// sentence-terminator+whitespace sequence, or None if none found.
+fn find_last_sentence_boundary(s: &str) -> Option<usize> {
+    let mut last: Option<usize> = None;
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        let c = bytes[i];
+        if (c == b'.' || c == b'?' || c == b'!')
+            && matches!(bytes[i + 1], b' ' | b'\t' | b'\n')
+        {
+            last = Some(i + 2);
+        }
+        i += 1;
+    }
+    last
+}
+
+fn find_last_whitespace(s: &str) -> Option<usize> {
+    s.rfind(|c: char| c.is_whitespace()).map(|i| i + 1)
+}
+
+/// Prepend CHUNK_OVERLAP tokens' worth of tail from the last existing chunk
+/// (if any) to `body`, yielding the next chunk's content.
+fn prepend_overlap(existing: &[String], body: &str) -> String {
+    let Some(prev) = existing.last() else {
+        return body.trim_start().to_string();
+    };
+    let overlap_chars = CHUNK_OVERLAP * CHARS_PER_TOKEN;
+    let tail_start = prev.len().saturating_sub(overlap_chars);
+    // Snap to a char boundary.
+    let tail_start = (tail_start..=prev.len())
+        .find(|&i| prev.is_char_boundary(i))
+        .unwrap_or(prev.len());
+    let tail = &prev[tail_start..];
+    format!("{tail}\n\n{}", body.trim_start())
+}
+
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, serde::Serialize)]
@@ -780,6 +883,78 @@ mod tests {
         let once = preprocess(input);
         let twice = preprocess(&once);
         assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn split_short_input_returns_single_chunk() {
+        let input = "Short transcript. Not much here.";
+        let chunks = split_into_chunks(input);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], input);
+    }
+
+    #[test]
+    fn split_long_input_produces_multiple_chunks() {
+        // ~24k chars ≈ 6000 tokens → ≥ 2 chunks given CHUNK_TARGET=3000.
+        let sentence = "This is a sentence with some length to it. ";
+        let input: String = sentence.repeat(550); // ~24k chars
+        let chunks = split_into_chunks(&input);
+        assert!(chunks.len() >= 2, "expected ≥2 chunks, got {}", chunks.len());
+        // Each chunk should be within target+search-window+overlap slack.
+        for (i, c) in chunks.iter().enumerate() {
+            assert!(
+                c.len() <= (CHUNK_TARGET + CHUNK_OVERLAP + 500) * 4 + 50,
+                "chunk {i} too large: {} chars", c.len()
+            );
+        }
+    }
+
+    #[test]
+    fn split_prefers_sentence_boundaries() {
+        // Build input where the target split lands mid-sentence, with a
+        // clean '. ' a few hundred chars before the target.
+        let head = "A".repeat(3000 * 4 - 300); // well before target (chars, not tokens)
+        let tail = ". Then more content here to fill space. ".repeat(200);
+        let input = format!("{head}. Clean boundary here. {tail}");
+        let chunks = split_into_chunks(&input);
+        assert!(chunks.len() >= 2);
+        // Chunk 0 should end with sentence-ending punctuation + space (or be trimmed to end with '.').
+        let c0 = chunks[0].trim_end();
+        assert!(
+            c0.ends_with('.') || c0.ends_with('?') || c0.ends_with('!'),
+            "chunk 0 ends with: {:?}",
+            &c0[c0.len().saturating_sub(40)..],
+        );
+    }
+
+    #[test]
+    fn split_wall_of_text_falls_back_to_whitespace() {
+        // No sentence punctuation at all; split should still find a space.
+        let word = "word ";
+        let input = word.repeat(4000); // ~20k chars, no punctuation
+        let chunks = split_into_chunks(&input);
+        assert!(chunks.len() >= 2);
+        // No chunk should end mid-word.
+        for (i, c) in chunks.iter().enumerate() {
+            let trimmed = c.trim_end();
+            assert!(trimmed.ends_with("word"), "chunk {i} ends mid-word: {:?}", &trimmed[trimmed.len().saturating_sub(20)..]);
+        }
+    }
+
+    #[test]
+    fn split_overlap_prefix_present_on_later_chunks() {
+        let sentence = "Sentence number X is here. ";
+        let input: String = (0..1200).map(|i| sentence.replace('X', &i.to_string())).collect();
+        let chunks = split_into_chunks(&input);
+        assert!(chunks.len() >= 2);
+        // Chunk 1 should start with some content that appears near the end of chunk 0.
+        let tail0_end = &chunks[0][chunks[0].len().saturating_sub(CHUNK_OVERLAP * 4)..];
+        // Pick a distinctive word near the end of chunk 0 and check it appears at the start of chunk 1.
+        let words: Vec<&str> = tail0_end.split_whitespace().collect();
+        if let Some(marker) = words.iter().rev().find(|w| w.len() > 3).copied() {
+            let head1 = &chunks[1][..chunks[1].len().min(CHUNK_OVERLAP * 4 + 100)];
+            assert!(head1.contains(marker), "chunk 1 head missing overlap marker {marker:?}");
+        }
     }
 }
 
