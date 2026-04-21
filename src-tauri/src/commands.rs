@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -424,6 +426,32 @@ fn prepend_overlap(existing: &[String], body: &str) -> String {
         .unwrap_or(prev.len());
     let tail = &prev[tail_start..];
     format!("{tail}\n\n{}", body.trim_start())
+}
+
+/// SHA-256 over `transcript || 0x00 || template || 0x00 || model` → hex.
+pub(crate) fn cache_key(transcript: &str, template: &str, model: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(transcript.as_bytes());
+    h.update([0u8]);
+    h.update(template.as_bytes());
+    h.update([0u8]);
+    h.update(model.as_bytes());
+    let digest = h.finalize();
+    let mut out = String::with_capacity(64);
+    for b in digest.iter() {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
+pub(crate) fn cache_read(cache_dir: &Path, key: &str) -> Option<String> {
+    let path = cache_dir.join(format!("{key}.md"));
+    std::fs::read_to_string(&path).ok()
+}
+
+pub(crate) fn cache_write(cache_dir: &Path, key: &str, content: &str) -> std::io::Result<()> {
+    std::fs::create_dir_all(cache_dir)?;
+    std::fs::write(cache_dir.join(format!("{key}.md")), content)
 }
 
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
@@ -981,6 +1009,37 @@ mod tests {
             assert!(c.is_char_boundary(0) && c.is_char_boundary(c.len()));
             assert!(std::str::from_utf8(c.as_bytes()).is_ok());
         }
+    }
+
+    #[test]
+    fn cache_key_is_stable_for_same_inputs() {
+        let a = cache_key("transcript", "template", "gemma3");
+        let b = cache_key("transcript", "template", "gemma3");
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 64, "sha256 hex should be 64 chars");
+    }
+
+    #[test]
+    fn cache_key_differs_on_any_input_change() {
+        let base = cache_key("t", "tpl", "m");
+        assert_ne!(base, cache_key("t2", "tpl", "m"));
+        assert_ne!(base, cache_key("t", "tpl2", "m"));
+        assert_ne!(base, cache_key("t", "tpl", "m2"));
+    }
+
+    #[test]
+    fn cache_read_missing_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = cache_read(tmp.path(), "nope");
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn cache_write_then_read_round_trips() {
+        let tmp = tempfile::tempdir().unwrap();
+        cache_write(tmp.path(), "abc123", "hello world").unwrap();
+        let got = cache_read(tmp.path(), "abc123").unwrap();
+        assert_eq!(got, "hello world");
     }
 }
 
