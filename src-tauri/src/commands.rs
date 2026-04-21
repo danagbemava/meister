@@ -1456,6 +1456,30 @@ mod tests {
         });
         (v, cb)
     }
+
+    #[tokio::test]
+    async fn single_call_path_makes_one_upstream_call() {
+        let mock = MockOllama::spawn(|_body| "FORMATTED\n".to_string()).await;
+        let tmp = tempfile::tempdir().unwrap();
+
+        let out = run_format_core(
+            "short transcript",
+            "# Template",
+            &mock.base_url,
+            "gemma3",
+            tmp.path(),
+            noop_progress(),
+        )
+        .await
+        .unwrap();
+
+        assert!(out.trim().contains("FORMATTED"));
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["keep_alive"], "30m");
+        assert_eq!(calls[0]["options"]["num_ctx"], 8192);
+        assert_eq!(calls[0]["options"]["num_predict"], -1);
+    }
 }
 
 #[cfg(test)]
