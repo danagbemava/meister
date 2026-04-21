@@ -166,3 +166,38 @@ pub fn set_paused(registry: &CallCaptureRegistry, id: &str, paused: bool) -> Res
     s.paused.store(paused, Ordering::Relaxed);
     Ok(())
 }
+
+/// Stop a session: drop handles to flush writers, encode via ffmpeg, delete
+/// temp dir, return the final output path as a String.
+pub fn finalize_session(
+    registry: &CallCaptureRegistry,
+    session_id: &str,
+    captures_dir: &std::path::Path,
+) -> Result<String, String> {
+    let session = registry
+        .sessions
+        .lock()
+        .unwrap()
+        .remove(session_id)
+        .ok_or_else(|| format!("unknown session: {session_id}"))?;
+
+    // Dropping handles finalizes the WAV writers.
+    drop(session.system_handle);
+    if let Some(h) = session.mic_handle { drop(h); }
+
+    // Build output path using the same naming convention as mic-capture.
+    std::fs::create_dir_all(captures_dir).map_err(|e| format!("create captures dir: {e}"))?;
+    let ts_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let ts = crate::commands::format_utc_timestamp_for_capture(ts_secs);
+    let short = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let out_path = captures_dir.join(format!("capture-{ts}-{short}.webm"));
+
+    mix::encode_final(&session.system_wav, session.mic_wav.as_deref(), &out_path)?;
+
+    let _ = std::fs::remove_dir_all(&session.session_dir);
+
+    Ok(out_path.to_string_lossy().to_string())
+}

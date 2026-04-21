@@ -86,6 +86,7 @@ pub fn run() {
             commands::pause_call_capture,
             commands::resume_call_capture,
             commands::discard_call_capture,
+            commands::stop_call_capture,
             orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())

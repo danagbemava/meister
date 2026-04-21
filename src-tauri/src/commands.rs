@@ -323,7 +323,7 @@ pub fn write_capture_to(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        format_utc_timestamp(secs_since_epoch)
+        format_utc_timestamp_for_capture(secs_since_epoch)
     };
     let full = uuid::Uuid::new_v4().simple().to_string();
     let short = &full[..8];
@@ -335,7 +335,7 @@ pub fn write_capture_to(
 }
 
 /// Return `YYYYMMDD-HHMMSS` for a given unix timestamp (UTC).
-fn format_utc_timestamp(secs: u64) -> String {
+pub(crate) fn format_utc_timestamp_for_capture(secs: u64) -> String {
     let days = (secs / 86_400) as i64;
     let sod = secs % 86_400;
     let hh = sod / 3_600;
@@ -744,6 +744,26 @@ pub async fn resume_call_capture(
     tokio::task::spawn_blocking(move || capture::set_paused(&registry, &session_id, false))
         .await
         .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn stop_call_capture(
+    app: AppHandle,
+    registry: tauri::State<'_, Arc<CallCaptureRegistry>>,
+    session_id: String,
+) -> Result<String, String> {
+    use tauri::Manager;
+    let captures_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?
+        .join("captures");
+    let registry = (*registry).clone();
+    tokio::task::spawn_blocking(move || {
+        capture::finalize_session(&registry, &session_id, &captures_dir)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
 }
 
 #[cfg(test)]
