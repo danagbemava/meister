@@ -25,13 +25,6 @@ struct OllamaTagsResponse {
     models: Vec<OllamaModel>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct OllamaGenerateRequest {
-    model: String,
-    prompt: String,
-    stream: bool,
-}
-
 // ── Dependency Check ───────────────────────────────────────────────────────────
 
 /// Check that ffmpeg and Ollama are available on the system.
@@ -690,8 +683,105 @@ pub(crate) struct FormatProgress {
     pub done: bool,
 }
 
+/// Core formatting logic, testable without an `AppHandle`. Owns the
+/// cache lookup, preprocessing, threshold-based branching, map-reduce
+/// orchestration, and final cache write.
+pub(crate) async fn run_format_core(
+    transcript: &str,
+    template: &str,
+    ollama_url: &str,
+    model: &str,
+    cache_dir: &Path,
+    on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync>,
+) -> Result<String, String> {
+    use futures_util::{stream, StreamExt};
+    use std::sync::atomic::AtomicUsize;
+
+    let key = cache_key(transcript, template, model);
+    if let Some(hit) = cache_read(cache_dir, &key) {
+        on_progress(FormatProgress {
+            phase: FormatPhase::Single,
+            chunk: None,
+            chars: hit.chars().count(),
+            done: true,
+        });
+        return Ok(hit);
+    }
+
+    let cleaned = preprocess(transcript);
+
+    let final_output = if approx_tokens(&cleaned) < THRESHOLD {
+        let prompt = build_prompt(&cleaned, template);
+        let single_cb = {
+            let on_progress = on_progress.clone();
+            move |p: FormatProgress| on_progress(p)
+        };
+        let boxed: Box<dyn Fn(FormatProgress) + Send + Sync> = Box::new(single_cb);
+        let out = ollama_generate_stream(
+            ollama_url, model, prompt, 8192,
+            FormatPhase::Single, None, &*boxed,
+        ).await?;
+        on_progress(FormatProgress {
+            phase: FormatPhase::Single,
+            chunk: None,
+            chars: out.chars().count(),
+            done: true,
+        });
+        out
+    } else {
+        let chunks = split_into_chunks(&cleaned);
+        let total = chunks.len();
+        let completed = Arc::new(AtomicUsize::new(0));
+        let chars_running = Arc::new(AtomicUsize::new(0));
+
+        let url = ollama_url.to_string();
+        let model_s = model.to_string();
+
+        let results: Vec<Result<(usize, String), String>> = stream::iter(
+            chunks.into_iter().enumerate()
+        )
+        .map(|(i, chunk_text)| {
+            let url = url.clone();
+            let model_s = model_s.clone();
+            let completed = completed.clone();
+            let chars_running = chars_running.clone();
+            let on_progress = on_progress.clone();
+            async move {
+                map_pass(&url, &model_s, &chunk_text, i, total, completed, chars_running, on_progress).await
+            }
+        })
+        .buffer_unordered(3)
+        .collect()
+        .await;
+
+        let mut notes: Vec<(usize, String)> = Vec::with_capacity(total);
+        for r in results {
+            notes.push(r?);
+        }
+        notes.sort_by_key(|(i, _)| *i);
+
+        let stitched = stitch_notes(&notes);
+        let reduced = reduce_pass(ollama_url, model, &stitched, template, on_progress.clone()).await?;
+
+        on_progress(FormatProgress {
+            phase: FormatPhase::Reduce,
+            chunk: None,
+            chars: reduced.chars().count(),
+            done: true,
+        });
+        reduced
+    };
+
+    if let Err(e) = cache_write(cache_dir, &key, &final_output) {
+        eprintln!("format cache write failed: {e}");
+    }
+
+    Ok(final_output)
+}
+
 /// Call Ollama to format a transcript against a template. Emits
-/// `format-progress` events while streaming.
+/// `format-progress` events while streaming. Thin wrapper over
+/// `run_format_core` that resolves the cache directory from the AppHandle.
 pub async fn run_format(
     app: &AppHandle,
     transcript: &str,
@@ -699,57 +789,26 @@ pub async fn run_format(
     ollama_url: &str,
     model: &str,
 ) -> Result<String, String> {
-    use futures_util::StreamExt;
+    let cache_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?
+        .join("format-cache");
 
-    let prompt = build_prompt(transcript, template_content);
-    let client = reqwest::Client::new();
-    let body = OllamaGenerateRequest {
-        model: model.to_string(),
-        prompt,
-        stream: true,
-    };
-    let resp = client
-        .post(format!("{}/api/generate", ollama_url))
-        .json(&body)
-        .timeout(std::time::Duration::from_secs(600))
-        .send()
-        .await
-        .map_err(|e| format!("Cannot reach Ollama at {ollama_url}: {e}"))?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Ollama returned {status}: {text}"));
-    }
-    let mut stream = resp.bytes_stream();
-    let mut buf = String::new();
-    let mut accumulated = String::new();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| format!("Ollama stream error: {e}"))?;
-        buf.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(nl) = buf.find('\n') {
-            let line = buf[..nl].to_string();
-            buf.drain(..=nl);
-            if line.trim().is_empty() { continue; }
-            let obj: serde_json::Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            if let Some(piece) = obj.get("response").and_then(|v| v.as_str()) {
-                accumulated.push_str(piece);
-                let _ = app.emit("format-progress", FormatProgress {
-                    chars: accumulated.chars().count(),
-                    done: false,
-                });
-            }
-            if obj.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
-                let _ = app.emit("format-progress", FormatProgress {
-                    chars: accumulated.chars().count(),
-                    done: true,
-                });
-            }
-        }
-    }
-    Ok(accumulated)
+    let app_handle = app.clone();
+    let on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync> = Arc::new(move |p| {
+        let _ = app_handle.emit("format-progress", p);
+    });
+
+    run_format_core(
+        transcript,
+        template_content,
+        ollama_url,
+        model,
+        &cache_dir,
+        on_progress,
+    )
+    .await
 }
 
 
