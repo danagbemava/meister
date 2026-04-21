@@ -145,7 +145,6 @@ pub async fn run_extract(
     Ok(())
 }
 
-
 // ── Transcription ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, serde::Serialize)]
@@ -215,7 +214,6 @@ pub async fn run_transcribe(
     result
 }
 
-
 // ── Formatting pipeline ────────────────────────────────────────────────────────
 
 /// Conservative text cleanup applied before sending a transcript to the
@@ -228,23 +226,18 @@ pub(crate) fn preprocess(input: &str) -> String {
     static PARA_RE: OnceLock<regex::Regex> = OnceLock::new();
     static WS_RE: OnceLock<regex::Regex> = OnceLock::new();
 
-    // Step 1: normalize dashes and ellipsis so later patterns are simpler.
     let mut s = input.replace('—', "-").replace('…', "...");
 
-    // Step 2: strip standalone fillers. `(?i)` = case-insensitive.
-    // `\b` boundaries mean "Uber", "umbrella", "Ahmad" are safe.
+    // `(?i)\b…\b` boundaries mean "Uber", "umbrella", "Ahmad" are safe.
     let filler = FILLER_RE.get_or_init(|| {
         regex::Regex::new(r"(?i)\b(uh|um|uhm|er|erm|hmm|ah)\b[,.!?]?\s*").unwrap()
     });
     s = filler.replace_all(&s, "").to_string();
 
-    // Step 3: collapse 3+ same-word stutters to a single instance.
-    // The regex crate doesn't support backreferences, so we use a token scan:
-    // split on whitespace-preserving boundaries, track consecutive identical
-    // words (case-insensitive), and keep only the first when a run of 3+.
+    // The regex crate doesn't support backreferences, so stutter collapsing
+    // uses a token scanner rather than a single regex.
     s = collapse_stutters(&s);
 
-    // Step 4: paragraph breaks → exactly "\n\n"; other whitespace runs → " ".
     let para = PARA_RE.get_or_init(|| regex::Regex::new(r"\n\s*\n\s*").unwrap());
     s = para.replace_all(&s, "\u{0000}").to_string(); // placeholder for para break
     let ws = WS_RE.get_or_init(|| regex::Regex::new(r"\s+").unwrap());
@@ -258,8 +251,6 @@ pub(crate) fn preprocess(input: &str) -> String {
 /// instance, preserving the first word's casing. Two consecutive identical
 /// words ("very very") are kept as-is (emphasis).
 fn collapse_stutters(input: &str) -> String {
-    // Tokenize into alternating (word, gap) pairs so we can reconstruct the
-    // string with original spacing. Leading whitespace is emitted verbatim.
     struct Token<'a> {
         word: &'a str,
         gap: &'a str, // whitespace immediately after this word
@@ -268,7 +259,6 @@ fn collapse_stutters(input: &str) -> String {
     let mut tokens: Vec<Token<'_>> = Vec::new();
     let len = input.len();
 
-    // Collect leading whitespace so we can emit it unchanged.
     let leading_end = input
         .char_indices()
         .find(|(_, c)| !c.is_whitespace())
@@ -277,18 +267,16 @@ fn collapse_stutters(input: &str) -> String {
     let mut i = leading_end;
 
     while i < len {
-        // Consume a non-whitespace run (the "word").
         let word_start = i;
         while i < len {
-            let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
             if input[i..].starts_with(|c: char| c.is_whitespace()) {
                 break;
             }
+            let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
             i += ch_len;
         }
         let word = &input[word_start..i];
 
-        // Consume the trailing whitespace (the "gap").
         let gap_start = i;
         while i < len && input[i..].starts_with(|c: char| c.is_whitespace()) {
             let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
@@ -301,25 +289,20 @@ fn collapse_stutters(input: &str) -> String {
         }
     }
 
-    // Walk tokens, collapsing runs of 3+ identical words to one.
     let mut result = String::with_capacity(input.len());
     result.push_str(&input[..leading_end]);
     let mut t = 0;
     while t < tokens.len() {
         let word = tokens[t].word;
-        let word_lc = word.to_lowercase();
         let mut run = 1;
-        while t + run < tokens.len() && tokens[t + run].word.to_lowercase() == word_lc {
+        while t + run < tokens.len() && tokens[t + run].word.eq_ignore_ascii_case(word) {
             run += 1;
         }
         if run >= 3 {
-            // Collapse to one: emit the first word, then the gap after the
-            // last repeated token so downstream spacing is preserved.
             result.push_str(word);
             result.push_str(tokens[t + run - 1].gap);
             t += run;
         } else {
-            // No collapse — emit each token in the run individually.
             for tok in &tokens[t..t + run] {
                 result.push_str(tok.word);
                 result.push_str(tok.gap);
@@ -756,11 +739,7 @@ mod tests {
     fn preprocess_strips_standalone_fillers() {
         let input = "Um, so I think, uh, we should go. Ah, okay.";
         let out = preprocess(input);
-        assert!(!out.to_lowercase().contains(" um"));
-        assert!(!out.to_lowercase().contains(" uh"));
-        assert!(!out.to_lowercase().contains(" ah"));
-        assert!(out.contains("I think"));
-        assert!(out.contains("we should go"));
+        assert_eq!(out, "so I think, we should go. okay.");
     }
 
     #[test]
