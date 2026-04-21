@@ -35,4 +35,31 @@ export const api = {
 
   recordSavedOutputs: (recordingId: string, savedPaths: string[]) =>
     invoke<void>("record_saved_outputs", { recordingId, savedPaths }),
+
+  startCallCapture: async (includeMic: boolean) => {
+    const raw = await invoke<{
+      session_id: string;
+      system_ok: boolean;
+      mic_ok: boolean;
+      mic_error?: string | null;
+    }>("start_call_capture", { includeMic });
+    return {
+      sessionId: raw.session_id,
+      systemOk: raw.system_ok,
+      micOk: raw.mic_ok,
+      micError: raw.mic_error ?? null,
+    };
+  },
+
+  pauseCallCapture: (sessionId: string) =>
+    invoke<void>("pause_call_capture", { sessionId }),
+
+  resumeCallCapture: (sessionId: string) =>
+    invoke<void>("resume_call_capture", { sessionId }),
+
+  stopCallCapture: (sessionId: string) =>
+    invoke<string>("stop_call_capture", { sessionId }),
+
+  discardCallCapture: (sessionId: string) =>
+    invoke<void>("discard_call_capture", { sessionId }),
 };

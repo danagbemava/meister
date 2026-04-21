@@ -3,6 +3,7 @@ import TemplateEditor from "./TemplateEditor";
 import SettingsForm from "./SettingsForm";
 import RecordingDropZone from "./RecordingDropZone";
 import RecordCard from "./RecordCard";
+import RecordCallCard from "./RecordCallCard";
 import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
@@ -176,9 +177,13 @@ export default function ProjectView({
           Recordings
         </h2>
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <RecordingDropZone onPicked={onFilesPicked} />
             <RecordCard
+              onPicked={onFilesPicked}
+              onActiveChange={onCaptureActiveChange}
+            />
+            <RecordCallCard
               onPicked={onFilesPicked}
               onActiveChange={onCaptureActiveChange}
             />
