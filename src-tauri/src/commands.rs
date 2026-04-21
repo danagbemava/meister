@@ -536,6 +536,90 @@ async fn ollama_generate_stream(
     Ok(accumulated)
 }
 
+fn build_map_prompt(chunk: &str, index: usize, total: usize) -> String {
+    format!(
+        r#"You are an expert note-taker. You will be given ONE SEGMENT of a longer transcript. This is part {part_num} of {total} parts.
+
+Your job:
+1. Read the segment carefully.
+2. Produce concise, structured markdown notes that capture everything a downstream document formatter will need to reconstruct what was said: participants mentioned, topics discussed, decisions, action items, dates, specific numbers, and short verbatim quotes worth preserving.
+3. Do NOT invent information not present in the segment. If the segment is mostly silence/filler, output "(no substantive content in this segment)".
+4. Do NOT write a finished document. These notes are intermediate.
+5. Where relevant, flag references to earlier or later segments (e.g. "as discussed earlier", "we'll come back to X").
+
+---
+SEGMENT (part {part_num} of {total}):
+{chunk}
+---
+
+Produce the notes now:"#,
+        part_num = index + 1,
+        total = total,
+        chunk = chunk,
+    )
+}
+
+/// Run the map-pass prompt against Ollama for one chunk. Emits phase=Map
+/// tokens with `chars` set to a running total via `chars_running` (shared
+/// across all concurrent chunks).
+async fn map_pass(
+    ollama_url: &str,
+    model: &str,
+    chunk: &str,
+    index: usize,
+    total: usize,
+    completed: Arc<std::sync::atomic::AtomicUsize>,
+    chars_running: Arc<std::sync::atomic::AtomicUsize>,
+    on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync>,
+) -> Result<(usize, String), String> {
+    use std::sync::atomic::Ordering;
+
+    let prompt = build_map_prompt(chunk, index, total);
+    let on_progress_inner = on_progress.clone();
+    let chars_running_inner = chars_running.clone();
+    let completed_inner = completed.clone();
+    let emit = move |p: FormatProgress| {
+        let this_chars = p.chars;
+        let prev = chars_running_inner.swap(
+            chars_running_inner.load(Ordering::Relaxed).max(this_chars),
+            Ordering::Relaxed,
+        );
+        let total_chars = prev.max(this_chars);
+        on_progress_inner(FormatProgress {
+            phase: FormatPhase::Map,
+            chunk: Some(ChunkInfo {
+                index,
+                total,
+                completed: completed_inner.load(Ordering::Relaxed),
+            }),
+            chars: total_chars,
+            done: false,
+        });
+    };
+
+    let emit_boxed: Box<dyn Fn(FormatProgress) + Send + Sync> = Box::new(emit);
+    let out = ollama_generate_stream(
+        ollama_url,
+        model,
+        prompt,
+        6144,
+        FormatPhase::Map,
+        Some(ChunkInfo { index, total, completed: completed.load(Ordering::Relaxed) }),
+        &*emit_boxed,
+    )
+    .await?;
+
+    let now_completed = completed.fetch_add(1, Ordering::Relaxed) + 1;
+    on_progress(FormatProgress {
+        phase: FormatPhase::Map,
+        chunk: Some(ChunkInfo { index, total, completed: now_completed }),
+        chars: chars_running.load(Ordering::Relaxed),
+        done: false,
+    });
+
+    Ok((index, out))
+}
+
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, serde::Serialize, PartialEq, Eq, Debug)]
