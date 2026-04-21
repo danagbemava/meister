@@ -72,47 +72,40 @@ pub async fn list_ollama_models(ollama_url: String) -> Result<Vec<String>, Strin
 // ── Audio Extraction ───────────────────────────────────────────────────────────
 
 /// Build the ffmpeg argv (without the `ffmpeg` binary itself) for extracting
-/// audio to a 16 kHz mono WAV. For a single input, uses the simple `-vn`
-/// shape; for multiple inputs, uses `filter_complex concat` to stitch their
-/// audio streams together in order.
-pub fn build_ffmpeg_args(input_paths: &[String], output_wav: &std::path::Path) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
-    for p in input_paths {
-        args.push("-i".to_string());
-        args.push(p.clone());
-    }
-    if input_paths.len() > 1 {
-        let mut filter = String::new();
-        for i in 0..input_paths.len() {
-            filter.push_str(&format!("[{i}:a]"));
-        }
-        filter.push_str(&format!("concat=n={}:v=0:a=1[out]", input_paths.len()));
-        args.push("-filter_complex".to_string());
-        args.push(filter);
-        args.push("-map".to_string());
-        args.push("[out]".to_string());
-    } else {
-        args.push("-vn".to_string());
-    }
-    args.push("-acodec".to_string());
-    args.push("pcm_s16le".to_string());
-    args.push("-ar".to_string());
-    args.push("16000".to_string());
-    args.push("-ac".to_string());
-    args.push("1".to_string());
-    args.push("-y".to_string());
-    args.push(output_wav.to_string_lossy().to_string());
-    args
+/// one input file's audio to a 16 kHz mono WAV.
+pub fn build_ffmpeg_args(input_path: &str, output_wav: &std::path::Path) -> Vec<String> {
+    vec![
+        "-i".to_string(),
+        input_path.to_string(),
+        "-vn".to_string(),
+        "-acodec".to_string(),
+        "pcm_s16le".to_string(),
+        "-ar".to_string(),
+        "16000".to_string(),
+        "-ac".to_string(),
+        "1".to_string(),
+        "-y".to_string(),
+        output_wav.to_string_lossy().to_string(),
+    ]
 }
 
-/// Extract audio from one or more input files into a single 16 kHz mono WAV.
-/// Inputs are concatenated in order when there is more than one.
+/// Extract audio from each input file into its corresponding 16 kHz mono WAV.
+/// One ffmpeg invocation per source — sources are kept separate so whisper
+/// processes them independently (avoids long-form repetition loops that hit
+/// when multiple sources are stitched before transcription).
 pub async fn run_extract(
     input_paths: &[String],
-    output_wav: &std::path::Path,
+    output_wavs: &[std::path::PathBuf],
 ) -> Result<(), String> {
     if input_paths.is_empty() {
         return Err("no source files provided".to_string());
+    }
+    if input_paths.len() != output_wavs.len() {
+        return Err(format!(
+            "input/output count mismatch: {} sources, {} outputs",
+            input_paths.len(),
+            output_wavs.len()
+        ));
     }
     let missing: Vec<&str> = input_paths
         .iter()
@@ -122,20 +115,22 @@ pub async fn run_extract(
     if !missing.is_empty() {
         return Err(format!("source file(s) missing:\n  {}", missing.join("\n  ")));
     }
-    if let Some(parent) = output_wav.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create output dir: {e}"))?;
-    }
-    let args = build_ffmpeg_args(input_paths, output_wav);
-    let output = Command::new("ffmpeg")
-        .args(&args)
-        .output()
-        .map_err(|e| format!("ffmpeg not found or failed to start: {e}. Install via: brew install ffmpeg"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "ffmpeg error:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+    for (input, output) in input_paths.iter().zip(output_wavs.iter()) {
+        if let Some(parent) = output.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("create output dir: {e}"))?;
+        }
+        let args = build_ffmpeg_args(input, output);
+        let result = Command::new("ffmpeg")
+            .args(&args)
+            .output()
+            .map_err(|e| format!("ffmpeg not found or failed to start: {e}. Install via: brew install ffmpeg"))?;
+        if !result.status.success() {
+            return Err(format!(
+                "ffmpeg error extracting {input}:\n{}",
+                String::from_utf8_lossy(&result.stderr)
+            ));
+        }
     }
     Ok(())
 }
@@ -165,6 +160,8 @@ pub async fn run_transcribe(
     wav_path: &std::path::Path,
     whisper_model: &str,
     language: &str,
+    source_idx: usize,
+    total_sources: usize,
 ) -> Result<String, String> {
     let size = transcription::ModelSize::from_str(whisper_model)
         .ok_or_else(|| format!("unknown model size: {whisper_model}"))?;
@@ -184,6 +181,9 @@ pub async fn run_transcribe(
     } else {
         Some(language.to_string())
     };
+    let total = total_sources.max(1) as f32;
+    let idx = source_idx as f32;
+    let label_idx = source_idx + 1;
 
     let result = tokio::task::spawn_blocking(move || {
         transcription::transcribe_wav_with_callback(
@@ -192,9 +192,16 @@ pub async fn run_transcribe(
             &wav,
             lang.as_deref(),
             move |pct| {
+                let per_file = pct.clamp(0, 100) as f32;
+                let overall = ((idx * 100.0 + per_file) / total).round() as u32;
+                let msg = if total > 1.0 {
+                    format!("Transcribing source {label_idx}/{total_sources}… {pct}%")
+                } else {
+                    format!("Transcribing… {pct}%")
+                };
                 let _ = app_cb.emit("transcribe-progress", TranscribeProgress {
-                    percent: pct.clamp(0, 100) as u32,
-                    message: format!("Transcribing… {pct}%"),
+                    percent: overall.min(100),
+                    message: msg,
                 });
             },
         )
@@ -202,10 +209,12 @@ pub async fn run_transcribe(
     .await
     .map_err(|e| format!("task join: {e}"))?;
 
-    let _ = app.emit("transcribe-progress", TranscribeProgress {
-        percent: 100,
-        message: "Transcription complete.".to_string(),
-    });
+    if source_idx + 1 == total_sources {
+        let _ = app.emit("transcribe-progress", TranscribeProgress {
+            percent: 100,
+            message: "Transcription complete.".to_string(),
+        });
+    }
     result
 }
 

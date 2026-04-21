@@ -158,8 +158,11 @@ pub async fn run_recording(
         .ok_or_else(|| format!("project not found: {}", rec.project_id))?;
 
     let template_hash = storage::template_hash(&project.template.content);
-    let wav_path = recording_dir(&app, &recording_id)?.join("audio.wav");
-    let wav_exists = wav_path.is_file();
+    let rec_dir = recording_dir(&app, &recording_id)?;
+    let wav_paths: Vec<std::path::PathBuf> = (0..rec.source_paths.len())
+        .map(|i| rec_dir.join(format!("audio-{i}.wav")))
+        .collect();
+    let wavs_exist = !wav_paths.is_empty() && wav_paths.iter().all(|p| p.is_file());
 
     // Walk stages; on invalidation, reset downstream before starting.
     // We reload the recording's stages after each transition to avoid stale in-memory copies.
@@ -181,7 +184,7 @@ pub async fn run_recording(
                 &rec.settings,
                 &template_hash,
                 first_source,
-                wav_exists,
+                wavs_exist,
             );
 
         if reusable {
@@ -202,7 +205,7 @@ pub async fn run_recording(
 
         let result = match stage_kind {
             StageKind::Extract => {
-                run_extract(&rec.source_paths, &wav_path).await
+                run_extract(&rec.source_paths, &wav_paths).await
                     .map(|_| storage::stages::CompletedOutput {
                         output: None,
                         model_used: None,
@@ -214,17 +217,31 @@ pub async fn run_recording(
             StageKind::Transcribe => {
                 let whisper_model = rec.settings.whisper_model.clone();
                 let language = rec.settings.language.clone();
-                let transcript = run_transcribe(&app, &wav_path, &whisper_model, &language).await?;
-                // Success: delete the wav to reclaim disk.
-                let _ = std::fs::remove_file(&wav_path);
-                Ok(storage::stages::CompletedOutput {
-                    output: Some(transcript),
-                    // Encode language into model_used for invalidation checks.
-                    model_used: Some(format!("{}@{}", whisper_model, language)),
-                    template_hash: None,
-                    saved_paths: None,
-                    completed_at: now_ms(),
-                })
+                let total = wav_paths.len();
+                let mut parts: Vec<String> = Vec::with_capacity(total);
+                let mut transcribe_err: Option<String> = None;
+                for (i, wav) in wav_paths.iter().enumerate() {
+                    match run_transcribe(&app, wav, &whisper_model, &language, i, total).await {
+                        Ok(t) => parts.push(t),
+                        Err(e) => { transcribe_err = Some(e); break; }
+                    }
+                }
+                if let Some(e) = transcribe_err {
+                    Err(e)
+                } else {
+                    // Success: delete all wavs to reclaim disk.
+                    for wav in &wav_paths {
+                        let _ = std::fs::remove_file(wav);
+                    }
+                    Ok(storage::stages::CompletedOutput {
+                        output: Some(parts.join("\n\n")),
+                        // Encode language into model_used for invalidation checks.
+                        model_used: Some(format!("{}@{}", whisper_model, language)),
+                        template_hash: None,
+                        saved_paths: None,
+                        completed_at: now_ms(),
+                    })
+                }
             }
             StageKind::Format => {
                 // Load transcript from transcribe stage output.

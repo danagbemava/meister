@@ -94,6 +94,12 @@ pub fn transcribe_wav_with_callback(
     if let Some(lang) = language.filter(|l| !l.is_empty() && *l != "auto") {
         params.set_language(Some(lang));
     }
+    // Prevent the classic long-form repetition loop: with no_context=false
+    // (the default), whisper feeds its previous output back as the prompt for
+    // the next 30-second window — so a single hallucinated `[inaudible]` can
+    // perpetuate itself through the tail of the audio.
+    params.set_no_context(true);
+    params.set_suppress_non_speech_tokens(true);
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_special(false);
