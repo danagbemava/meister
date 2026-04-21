@@ -454,12 +454,113 @@ pub(crate) fn cache_write(cache_dir: &Path, key: &str, content: &str) -> std::io
     std::fs::write(cache_dir.join(format!("{key}.md")), content)
 }
 
+/// Call Ollama /api/generate with streaming, forward tokens to `on_progress`
+/// with the given phase (and optional chunk info). Returns the accumulated
+/// output. Honors `keep_alive: "30m"` and explicit `num_ctx` / `num_predict`.
+async fn ollama_generate_stream(
+    ollama_url: &str,
+    model: &str,
+    prompt: String,
+    num_ctx: u32,
+    phase: FormatPhase,
+    chunk: Option<ChunkInfo>,
+    on_progress: &(dyn Fn(FormatProgress) + Send + Sync),
+) -> Result<String, String> {
+    use futures_util::StreamExt;
+
+    #[derive(serde::Serialize)]
+    struct Options {
+        num_ctx: u32,
+        num_predict: i32,
+    }
+    #[derive(serde::Serialize)]
+    struct Req<'a> {
+        model: &'a str,
+        prompt: String,
+        stream: bool,
+        keep_alive: &'a str,
+        options: Options,
+    }
+
+    let body = Req {
+        model,
+        prompt,
+        stream: true,
+        keep_alive: "30m",
+        options: Options { num_ctx, num_predict: -1 },
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/generate", ollama_url))
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .map_err(|e| format!("Cannot reach Ollama at {ollama_url}: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Ollama returned {status}: {text}"));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    let mut accumulated = String::new();
+    while let Some(chunk_bytes) = stream.next().await {
+        let bytes = chunk_bytes.map_err(|e| format!("Ollama stream error: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(nl) = buf.find('\n') {
+            let line = buf[..nl].to_string();
+            buf.drain(..=nl);
+            if line.trim().is_empty() { continue; }
+            let obj: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if let Some(piece) = obj.get("response").and_then(|v| v.as_str()) {
+                accumulated.push_str(piece);
+                on_progress(FormatProgress {
+                    phase,
+                    chunk: chunk.clone(),
+                    chars: accumulated.chars().count(),
+                    done: false,
+                });
+            }
+            if obj.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
+                // Dispatcher owns the terminal done=true event.
+            }
+        }
+    }
+    Ok(accumulated)
+}
+
 // ── LLM Formatting ─────────────────────────────────────────────────────────────
 
-#[derive(Clone, serde::Serialize)]
-struct FormatProgress {
-    chars: usize,
-    done: bool,
+#[derive(Clone, Copy, serde::Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum FormatPhase {
+    Single,
+    Map,
+    Reduce,
+}
+
+#[derive(Clone, serde::Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChunkInfo {
+    pub index: usize,
+    pub total: usize,
+    pub completed: usize,
+}
+
+#[derive(Clone, serde::Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FormatProgress {
+    pub phase: FormatPhase,
+    pub chunk: Option<ChunkInfo>,
+    pub chars: usize,
+    pub done: bool,
 }
 
 /// Call Ollama to format a transcript against a template. Emits
