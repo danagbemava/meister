@@ -55,6 +55,13 @@ pub fn run() {
                 Err(e) => eprintln!("storage: capture cleanup failed (non-fatal): {e}"),
             }
 
+            let call_tmp = capture::all_sessions_temp_dir(&app_data_dir);
+            match capture::cleanup_orphaned_call_temps(&call_tmp, &std::collections::HashSet::new()) {
+                Ok(n) if n > 0 => eprintln!("capture: removed {n} orphaned call-capture dir(s)"),
+                Ok(_) => {}
+                Err(e) => eprintln!("capture: call temp cleanup failed (non-fatal): {e}"),
+            }
+
             app.manage(std::sync::Arc::new(store));
             app.manage(std::sync::Arc::new(capture::CallCaptureRegistry::new()));
 

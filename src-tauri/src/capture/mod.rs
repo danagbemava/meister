@@ -201,3 +201,5 @@ pub fn finalize_session(
 
     Ok(out_path.to_string_lossy().to_string())
 }
+
+pub use cleanup::cleanup_orphaned_call_temps;
