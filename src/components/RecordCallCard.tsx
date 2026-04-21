@@ -1,0 +1,246 @@
+import { useEffect, useRef, useState } from "react";
+import { api } from "../api/storage";
+
+type CaptureState =
+  | "idle"
+  | "permission-needed"
+  | "recording"
+  | "paused"
+  | "saving"
+  | "error";
+
+interface Props {
+  onPicked: (filePaths: string[]) => void;
+  onActiveChange?: (discard: (() => void) | null) => void;
+}
+
+function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const hh = Math.floor(total / 3600);
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return hh > 0 ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : `${pad(mm)}:${pad(ss)}`;
+}
+
+export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
+  const [state, setState] = useState<CaptureState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string>("");
+  const [micError, setMicError] = useState<string>("");
+  const [includeMic, setIncludeMic] = useState(true);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  const sessionRef = useRef<string | null>(null);
+  const startedAtRef = useRef<number>(0);
+  const accumulatedRef = useRef<number>(0);
+  const tickerRef = useRef<number | null>(null);
+
+  const stopTicker = () => {
+    if (tickerRef.current !== null) {
+      window.clearInterval(tickerRef.current);
+      tickerRef.current = null;
+    }
+  };
+
+  const startTicker = () => {
+    stopTicker();
+    tickerRef.current = window.setInterval(() => {
+      setElapsedMs(accumulatedRef.current + (Date.now() - startedAtRef.current));
+    }, 200);
+  };
+
+  useEffect(() => {
+    return () => { stopTicker(); };
+  }, []);
+
+  const discard = async () => {
+    const id = sessionRef.current;
+    stopTicker();
+    sessionRef.current = null;
+    onActiveChange?.(null);
+    if (id) {
+      try { await api.discardCallCapture(id); } catch { /* best-effort */ }
+    }
+    setState("idle");
+    setElapsedMs(0);
+    accumulatedRef.current = 0;
+  };
+
+  const start = async () => {
+    setErrorMsg("");
+    setMicError("");
+    setElapsedMs(0);
+    accumulatedRef.current = 0;
+    try {
+      const result = await api.startCallCapture(includeMic);
+      if (!result.systemOk) {
+        setState("permission-needed");
+        return;
+      }
+      if (includeMic && !result.micOk) {
+        setMicError(result.micError ?? "Microphone unavailable — recording system audio only.");
+      }
+      sessionRef.current = result.sessionId;
+      startedAtRef.current = Date.now();
+      startTicker();
+      setState("recording");
+      onActiveChange?.(() => { void discard(); });
+    } catch (e) {
+      setState("error");
+      setErrorMsg(String(e));
+    }
+  };
+
+  const pause = async () => {
+    const id = sessionRef.current;
+    if (!id) return;
+    try {
+      await api.pauseCallCapture(id);
+      stopTicker();
+      accumulatedRef.current += Date.now() - startedAtRef.current;
+      setState("paused");
+    } catch (e) {
+      setErrorMsg(String(e));
+      setState("error");
+    }
+  };
+
+  const resume = async () => {
+    const id = sessionRef.current;
+    if (!id) return;
+    try {
+      await api.resumeCallCapture(id);
+      startedAtRef.current = Date.now();
+      startTicker();
+      setState("recording");
+    } catch (e) {
+      setErrorMsg(String(e));
+      setState("error");
+    }
+  };
+
+  const stop = async () => {
+    const id = sessionRef.current;
+    if (!id) return;
+    stopTicker();
+    setState("saving");
+    try {
+      const path = await api.stopCallCapture(id);
+      sessionRef.current = null;
+      onActiveChange?.(null);
+      setElapsedMs(0);
+      accumulatedRef.current = 0;
+      setState("idle");
+      onPicked([path]);
+    } catch (e) {
+      setErrorMsg(String(e));
+      setState("error");
+    }
+  };
+
+  const openSettings = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+      );
+    } catch { /* ignore */ }
+  };
+
+  const retry = () => {
+    setState("idle");
+    setErrorMsg("");
+    setMicError("");
+  };
+
+  const cardBase =
+    "rounded-xl border-2 flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
+
+  if (state === "idle") {
+    return (
+      <div
+        className={`${cardBase} border-dashed border-white/10 hover:border-white/20 bg-surface-secondary cursor-pointer`}
+        onClick={start}
+      >
+        <span className="text-3xl opacity-30">🔊</span>
+        <p className="text-sm text-white/40">Record call</p>
+        <label
+          className="flex items-center gap-2 text-xs text-white/50 cursor-pointer select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={includeMic}
+            onChange={(e) => setIncludeMic(e.target.checked)}
+          />
+          Include microphone
+        </label>
+      </div>
+    );
+  }
+
+  if (state === "permission-needed") {
+    return (
+      <div className={`${cardBase} border-solid border-amber-500/40 bg-amber-500/10`}>
+        <span className="text-3xl opacity-60">🔒</span>
+        <p className="text-sm text-amber-300 text-center px-2">
+          Screen Recording permission required.
+        </p>
+        <p className="text-xs text-white/40 text-center px-2">
+          Grant permission in System Settings, then relaunch Meister.
+        </p>
+        <div className="flex gap-2 mt-2">
+          <button onClick={openSettings} className="px-3 py-1 rounded bg-accent text-surface text-sm font-medium">
+            Open Settings
+          </button>
+          <button onClick={retry} className="px-3 py-1 rounded bg-surface hover:bg-white/10 text-sm">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "recording" || state === "paused") {
+    const dotColor = state === "recording" ? "bg-red-500 animate-pulse" : "bg-amber-400";
+    const badge = includeMic ? "System + Mic" : "System only";
+    return (
+      <div className={`${cardBase} border-solid border-accent/40 bg-accent/10`}>
+        <div className="flex items-center gap-2">
+          <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
+          <span className="text-2xl font-mono tabular-nums">{formatElapsed(elapsedMs)}</span>
+        </div>
+        <p className="text-xs text-white/50">{badge}</p>
+        {micError && (
+          <p className="text-xs text-amber-400 text-center px-2">{micError}</p>
+        )}
+        <div className="flex gap-2 mt-2">
+          {state === "recording" ? (
+            <button onClick={pause} className="px-3 py-1 rounded bg-surface hover:bg-white/10 text-sm">⏸ Pause</button>
+          ) : (
+            <button onClick={resume} className="px-3 py-1 rounded bg-surface hover:bg-white/10 text-sm">▶ Resume</button>
+          )}
+          <button onClick={stop} className="px-3 py-1 rounded bg-accent text-surface text-sm font-medium">⏹ Stop</button>
+          <button onClick={discard} className="px-3 py-1 rounded bg-surface hover:bg-red-500/20 text-sm text-white/70">✕ Discard</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "saving") {
+    return (
+      <div className={`${cardBase} border-solid border-white/10 bg-surface-secondary`}>
+        <span className="spinner" />
+        <p className="text-sm text-white/50">Mixing tracks…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${cardBase} border-solid border-red-500/30 bg-red-500/10`}>
+      <span className="text-3xl opacity-50">⚠</span>
+      <p className="text-sm text-red-300 text-center px-2">{errorMsg}</p>
+      <button onClick={retry} className="mt-2 px-3 py-1 rounded bg-surface hover:bg-white/10 text-sm">Retry</button>
+    </div>
+  );
+}
