@@ -1544,6 +1544,49 @@ mod tests {
         let calls = mock.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
     }
+
+    #[tokio::test]
+    async fn progress_events_order_map_then_reduce_then_done() {
+        let sentence = "This is a long sentence that will get split eventually. ";
+        let transcript: String = sentence.repeat(500);
+
+        let mock = MockOllama::spawn(|b| {
+            if b["prompt"].as_str().unwrap().contains("note-taker") {
+                "NOTES. ".to_string()
+            } else {
+                "REDUCED. ".to_string()
+            }
+        })
+        .await;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let (events, cb) = collect_progress();
+
+        run_format_core(&transcript, "# Template", &mock.base_url, "gemma3", tmp.path(), cb)
+            .await
+            .unwrap();
+
+        let events = events.lock().unwrap().clone();
+        assert!(!events.is_empty());
+
+        let phases: Vec<FormatPhase> = events.iter().map(|e| e.phase).collect();
+        let first_reduce_idx = phases.iter().position(|p| *p == FormatPhase::Reduce).expect("no reduce phase");
+        assert!(phases[..first_reduce_idx].iter().all(|p| *p == FormatPhase::Map));
+
+        let mut last_completed = 0;
+        for e in events.iter().take(first_reduce_idx) {
+            let c = e.chunk.as_ref().expect("map event missing chunk info");
+            assert!(c.completed >= last_completed);
+            last_completed = c.completed;
+        }
+        let last_map = &events[first_reduce_idx - 1];
+        let c = last_map.chunk.as_ref().unwrap();
+        assert_eq!(c.completed, c.total);
+
+        let last = events.last().unwrap();
+        assert!(last.done);
+        assert_eq!(last.phase, FormatPhase::Reduce);
+    }
 }
 
 #[cfg(test)]
