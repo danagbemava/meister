@@ -104,7 +104,7 @@ export default function Sidebar({
             />
             <button
               onClick={createProject}
-              className="px-2 py-1 text-xs rounded bg-accent text-label-primary"
+              className="px-2 py-1 text-xs rounded bg-accent text-accent-label"
             >
               ✓
             </button>
