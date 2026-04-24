@@ -47,7 +47,14 @@ axum = "0.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5"
-objc2-foundation = "0.2"
+objc2-foundation = { version = "0.2", features = [
+    "NSDistributedNotificationCenter",
+    "NSNotification",
+    "NSObject",
+    "NSOperation",
+    "NSString",
+    "block2",
+] }
 objc2-app-kit = { version = "0.2", features = [
     "NSAppearance",
     "NSColor",

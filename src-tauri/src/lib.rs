@@ -66,6 +66,8 @@ pub fn run() {
             app.manage(std::sync::Arc::new(store));
             app.manage(std::sync::Arc::new(capture::CallCaptureRegistry::new()));
 
+            accent::install_observer(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

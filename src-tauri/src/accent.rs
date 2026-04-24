@@ -119,6 +119,80 @@ pub fn emit_current<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Install a macOS-only observer that re-reads accent colors and emits
+/// `system-accent-changed` whenever the user changes the system accent
+/// or toggles Light/Dark appearance.
+///
+/// No-op on non-macOS.
+#[cfg(target_os = "macos")]
+pub fn install_observer<R: Runtime>(app: AppHandle<R>) {
+    observer::install(app);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install_observer<R: Runtime>(_app: AppHandle<R>) {}
+
+#[cfg(target_os = "macos")]
+mod observer {
+    use super::{emit_current, ACCENT_CHANGED_EVENT};
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::NSObject;
+    use objc2_foundation::{
+        NSDistributedNotificationCenter, NSNotification, NSNotificationName, NSString,
+    };
+    use std::ptr::NonNull;
+    use tauri::{AppHandle, Runtime};
+
+    // These are Apple's distributed notification names, not exposed as
+    // constants in the AppKit headers — we construct NSStrings for them.
+    const ACCENT_NOTIFICATION: &str = "AppleColorPreferencesChangedNotification";
+    const APPEARANCE_NOTIFICATION: &str = "AppleInterfaceThemeChangedNotification";
+
+    /// Install observers on the shared `NSDistributedNotificationCenter`.
+    ///
+    /// SAFETY: Uses AppKit via objc2. Must be called from the main thread,
+    /// which Tauri's setup closure is.
+    pub fn install<R: Runtime>(app: AppHandle<R>) {
+        unsafe {
+            let center = NSDistributedNotificationCenter::defaultCenter();
+
+            // The observer callback may fire on any thread. We hop to the
+            // main thread before reading AppKit colors, since
+            // `read_accent_colors` (and NSColor / NSAppearance) require it.
+            let add = |name: &str| -> Retained<NSObject> {
+                let app = app.clone();
+                let ns_name: Retained<NSNotificationName> = NSString::from_str(name);
+
+                let block = RcBlock::new(move |_note: NonNull<NSNotification>| {
+                    let app_for_thread = app.clone();
+                    // run_on_main_thread is safe to call from any thread.
+                    if let Err(e) = app.run_on_main_thread(move || {
+                        emit_current(&app_for_thread);
+                    }) {
+                        eprintln!("accent: run_on_main_thread failed for {ACCENT_CHANGED_EVENT}: {e}");
+                    }
+                });
+
+                center.addObserverForName_object_queue_usingBlock(
+                    Some(&ns_name),
+                    None,
+                    None,
+                    &block,
+                )
+            };
+
+            let token_accent = add(ACCENT_NOTIFICATION);
+            let token_appearance = add(APPEARANCE_NOTIFICATION);
+
+            // Intentionally leak the observer tokens so they live for the
+            // duration of the process. The system cleans them up on exit.
+            std::mem::forget(token_accent);
+            std::mem::forget(token_appearance);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
