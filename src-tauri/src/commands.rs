@@ -492,11 +492,22 @@ async fn ollama_generate_stream(
         options: Options { num_ctx, num_predict: -1 },
     };
 
+    // Overall budget for the whole request (model load + generation). Gemma-3
+    // 27b / Gemma-4 on a warm GPU take ~2–4 min per chunk; 8 min is the
+    // outer wall.
+    const REQUEST_TIMEOUT_SECS: u64 = 480;
+    // Inter-chunk watchdog: if no streaming bytes arrive for this long we
+    // assume Ollama has wedged (crashed, evicted the model, dropped the
+    // socket) and fail fast instead of hanging on a dead connection until
+    // REQUEST_TIMEOUT_SECS. 120 s leaves headroom for a cold model load
+    // before the first token.
+    const INACTIVITY_TIMEOUT_SECS: u64 = 120;
+
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{}/api/generate", ollama_url))
         .json(&body)
-        .timeout(std::time::Duration::from_secs(600))
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .send()
         .await
         .map_err(|e| format!("Cannot reach Ollama at {ollama_url}: {e}"))?;
@@ -510,7 +521,21 @@ async fn ollama_generate_stream(
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
     let mut accumulated = String::new();
-    while let Some(chunk_bytes) = stream.next().await {
+    loop {
+        let next = tokio::time::timeout(
+            std::time::Duration::from_secs(INACTIVITY_TIMEOUT_SECS),
+            stream.next(),
+        )
+        .await;
+        let chunk_bytes = match next {
+            Ok(Some(c)) => c,
+            Ok(None) => break,
+            Err(_) => {
+                return Err(format!(
+                    "Ollama at {ollama_url} stopped responding (no data for {INACTIVITY_TIMEOUT_SECS}s). The model may have been unloaded or the server crashed. Try: pkill ollama && OLLAMA_NUM_PARALLEL=3 ollama serve, then re-run."
+                ));
+            }
+        };
         let bytes = chunk_bytes.map_err(|e| format!("Ollama stream error: {e}"))?;
         buf.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(nl) = buf.find('\n') {
