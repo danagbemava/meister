@@ -13,7 +13,7 @@ export default function TitleBar() {
       <div data-tauri-drag-region className="w-16" />
       <span
         data-tauri-drag-region
-        className="flex-1 text-center text-sm font-medium text-label-secondary tracking-wide"
+        className="flex-1 text-center text-body font-medium text-label-secondary tracking-wide"
       >
         Meister
       </span>

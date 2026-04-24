@@ -127,7 +127,7 @@ export default function ProjectView({
         {renaming ? (
           <input
             autoFocus
-            className="input text-xl font-semibold"
+            className="input text-title-2 font-semibold"
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             onBlur={async () => {
@@ -143,7 +143,7 @@ export default function ProjectView({
         ) : (
           <h1
             onClick={() => setRenaming(true)}
-            className="text-xl font-semibold cursor-text hover:text-accent"
+            className="text-title-2 font-semibold cursor-text hover:text-accent"
             title="Click to rename"
           >
             {project.name}
@@ -151,7 +151,7 @@ export default function ProjectView({
         )}
         <button
           onClick={deleteProject}
-          className="text-xs text-label-tertiary hover:text-status-error"
+          className="text-footnote text-label-tertiary hover:text-status-error"
         >
           Delete project
         </button>
@@ -163,7 +163,7 @@ export default function ProjectView({
       />
 
       <div>
-        <h2 className="text-xs font-semibold text-label-tertiary uppercase tracking-wider mb-3">
+        <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider mb-3">
           Default settings
         </h2>
         <SettingsForm
@@ -173,7 +173,7 @@ export default function ProjectView({
       </div>
 
       <div>
-        <h2 className="text-xs font-semibold text-label-tertiary uppercase tracking-wider mb-3">
+        <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider mb-3">
           Recordings
         </h2>
         <div className="flex flex-col gap-3">
@@ -202,7 +202,7 @@ export default function ProjectView({
           {recordings.length > 0 && (
             <ul className="flex flex-col gap-1">
               {recordings.map((r) => (
-                <li key={r.id} className="text-sm text-label-secondary px-3 py-1.5 bg-control-background rounded hover:bg-fill-tertiary">
+                <li key={r.id} className="text-body text-label-secondary px-3 py-1.5 bg-control-background rounded hover:bg-fill-tertiary">
                   {r.name}
                 </li>
               ))}

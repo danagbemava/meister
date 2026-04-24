@@ -68,7 +68,7 @@ export default function StagingList({
             onDragOver={handleDragOver(idx)}
             onDrop={handleDrop(idx)}
             onDragEnd={handleDragEnd}
-            className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm
+            className={`flex items-center gap-2 px-2 py-1.5 rounded text-body
               ${overIdx === idx ? "bg-accent/10" : ""}
               ${draggingIdx === idx ? "opacity-40" : ""}`}
           >
@@ -79,7 +79,7 @@ export default function StagingList({
             </span>
             <button
               onClick={() => onRemove(idx)}
-              className="text-label-secondary hover:text-status-error text-xs px-1"
+              className="text-label-secondary hover:text-status-error text-footnote px-1"
               title="Remove"
             >
               ✕
@@ -88,10 +88,10 @@ export default function StagingList({
         ))}
       </ul>
       <div className="flex items-center gap-2 pt-2 border-t border-separator">
-        <label className="text-xs text-label-secondary shrink-0">Name</label>
+        <label className="text-footnote text-label-secondary shrink-0">Name</label>
         <input
           type="text"
-          className="input flex-1 text-sm"
+          className="input flex-1 text-body"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="Recording name"
@@ -100,14 +100,14 @@ export default function StagingList({
       <div className="flex items-center justify-end gap-2">
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 rounded text-xs text-label-secondary hover:text-label-primary"
+          className="px-3 py-1.5 rounded text-footnote text-label-secondary hover:text-label-primary"
         >
           Cancel
         </button>
         <button
           onClick={onCreate}
           disabled={paths.length === 0}
-          className="px-4 py-1.5 rounded text-sm bg-accent text-accent-label disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-4 py-1.5 rounded text-body bg-accent text-accent-label disabled:opacity-30 disabled:cursor-not-allowed"
         >
           Create
         </button>

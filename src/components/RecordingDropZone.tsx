@@ -52,10 +52,10 @@ export default function RecordingDropZone({ onPicked }: Props) {
       onClick={openFile}
     >
       <span className="text-3xl opacity-30">🎬</span>
-      <p className="text-sm text-label-secondary text-center px-4">
+      <p className="text-body text-label-secondary text-center px-4">
         Drop one or more files here, or click to browse
       </p>
-      <p className="text-xs text-label-tertiary">mp4 · mov · mp3 · m4a · wav · …</p>
+      <p className="text-footnote text-label-tertiary">mp4 · mov · mp3 · m4a · wav · …</p>
     </div>
   );
 }

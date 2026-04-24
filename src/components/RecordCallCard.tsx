@@ -163,9 +163,9 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
         onClick={start}
       >
         <span className="text-3xl opacity-30">🔊</span>
-        <p className="text-sm text-label-secondary">Record call</p>
+        <p className="text-body text-label-secondary">Record call</p>
         <label
-          className="flex items-center gap-2 text-xs text-label-secondary cursor-pointer select-none"
+          className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <input
@@ -183,17 +183,17 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     return (
       <div className={`${cardBase} border-solid border-status-warning/40 bg-status-warning/10`}>
         <span className="text-3xl opacity-60">🔒</span>
-        <p className="text-sm text-status-warning text-center px-2">
+        <p className="text-body text-status-warning text-center px-2">
           Screen Recording permission required.
         </p>
-        <p className="text-xs text-label-secondary text-center px-2">
+        <p className="text-footnote text-label-secondary text-center px-2">
           Grant permission in System Settings, then relaunch Meister.
         </p>
         <div className="flex gap-2 mt-2">
-          <button onClick={openSettings} className="px-3 py-1 rounded bg-accent text-accent-label text-sm font-medium">
+          <button onClick={openSettings} className="px-3 py-1 rounded bg-accent text-accent-label text-body font-medium">
             Open Settings
           </button>
-          <button onClick={retry} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-sm">
+          <button onClick={retry} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">
             Retry
           </button>
         </div>
@@ -210,18 +210,18 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
           <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
           <span className="text-2xl font-mono tabular-nums">{formatElapsed(elapsedMs)}</span>
         </div>
-        <p className="text-xs text-label-secondary">{badge}</p>
+        <p className="text-footnote text-label-secondary">{badge}</p>
         {micError && (
-          <p className="text-xs text-status-warning text-center px-2">{micError}</p>
+          <p className="text-footnote text-status-warning text-center px-2">{micError}</p>
         )}
         <div className="flex gap-2 mt-2">
           {state === "recording" ? (
-            <button onClick={pause} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-sm">⏸ Pause</button>
+            <button onClick={pause} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">⏸ Pause</button>
           ) : (
-            <button onClick={resume} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-sm">▶ Resume</button>
+            <button onClick={resume} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">▶ Resume</button>
           )}
-          <button onClick={stop} className="px-3 py-1 rounded bg-accent text-accent-label text-sm font-medium">⏹ Stop</button>
-          <button onClick={discard} className="px-3 py-1 rounded bg-window-background hover:bg-status-error/20 text-sm text-label-secondary">✕ Discard</button>
+          <button onClick={stop} className="px-3 py-1 rounded bg-accent text-accent-label text-body font-medium">⏹ Stop</button>
+          <button onClick={discard} className="px-3 py-1 rounded bg-window-background hover:bg-status-error/20 text-body text-label-secondary">✕ Discard</button>
         </div>
       </div>
     );
@@ -231,7 +231,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     return (
       <div className={`${cardBase} border-solid border-separator bg-control-background`}>
         <span className="spinner" />
-        <p className="text-sm text-label-secondary">Mixing tracks…</p>
+        <p className="text-body text-label-secondary">Mixing tracks…</p>
       </div>
     );
   }
@@ -239,8 +239,8 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
   return (
     <div className={`${cardBase} border-solid border-status-error/30 bg-status-error/10`}>
       <span className="text-3xl opacity-50">⚠</span>
-      <p className="text-sm text-status-error text-center px-2">{errorMsg}</p>
-      <button onClick={retry} className="mt-2 px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-sm">Retry</button>
+      <p className="text-body text-status-error text-center px-2">{errorMsg}</p>
+      <button onClick={retry} className="mt-2 px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">Retry</button>
     </div>
   );
 }

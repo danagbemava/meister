@@ -186,7 +186,7 @@ export default function RecordingView({
           {renamingRec ? (
             <input
               autoFocus
-              className="input text-xl font-semibold flex-1 mr-4"
+              className="input text-title-2 font-semibold flex-1 mr-4"
               value={draftRecName}
               onChange={(e) => setDraftRecName(e.target.value)}
               onBlur={async () => {
@@ -207,19 +207,19 @@ export default function RecordingView({
           ) : (
             <h1
               onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
-              className="text-xl font-semibold cursor-text hover:text-accent"
+              className="text-title-2 font-semibold cursor-text hover:text-accent"
               title="Click to rename"
             >
               {rec.name}
             </h1>
           )}
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-footnote">
             <span className="text-label-tertiary">{overallStatus(rec)}</span>
             <button onClick={deleteMe} className="text-label-tertiary hover:text-status-error">Delete</button>
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-label-secondary uppercase tracking-wider">
+          <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
           </span>
           <ul className="flex flex-col gap-1">
@@ -228,7 +228,7 @@ export default function RecordingView({
               return (
                 <li
                   key={`${p}-${idx}`}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded text-xs font-mono
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded text-footnote font-mono
                     ${missing
                       ? "bg-status-error/10 border border-status-error/20"
                       : "bg-control-background"}`}
@@ -278,12 +278,12 @@ export default function RecordingView({
         </div>
 
         <details className="bg-control-background rounded-xl p-4">
-          <summary className="cursor-pointer text-sm text-label-secondary">Recording settings</summary>
+          <summary className="cursor-pointer text-body text-label-secondary">Recording settings</summary>
           <div className="mt-4 flex flex-col gap-3">
             {(() => {
               const warning = completedStageInvalidation(rec);
               return warning ? (
-                <p className="text-xs bg-status-warning/10 border border-status-warning/20 text-status-warning rounded px-3 py-2">
+                <p className="text-footnote bg-status-warning/10 border border-status-warning/20 text-status-warning rounded px-3 py-2">
                   {warning}
                 </p>
               ) : null;
@@ -307,7 +307,7 @@ export default function RecordingView({
         />
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
-          <div className="text-xs text-label-tertiary space-y-1">
+          <div className="text-footnote text-label-tertiary space-y-1">
             {formatProgress.phase === "single" && (
               <p>Formatting… {formatProgress.chars.toLocaleString()} chars</p>
             )}
@@ -340,14 +340,14 @@ export default function RecordingView({
       <div className="shrink-0 border-t border-separator p-4 flex items-center justify-between bg-window-background">
         <button
           onClick={startOver}
-          className="text-sm text-label-secondary hover:text-label-primary"
+          className="text-body text-label-secondary hover:text-label-primary"
         >
           Start over
         </button>
         <button
           disabled={!canRun}
           onClick={run}
-          className="px-6 py-2 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold text-accent-label transition-colors"
+          className="px-6 py-2 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-headline text-accent-label transition-colors"
         >
           {running || backendRunning ? "Running…" : anyFailed ? "Resume" : "Run"}
         </button>

@@ -85,7 +85,7 @@ export default function Sidebar({
         {!creating ? (
           <button
             onClick={() => setCreating(true)}
-            className="w-full px-3 py-2 rounded-lg text-sm bg-accent/10 hover:bg-accent/20 text-accent"
+            className="w-full px-3 py-2 rounded-lg text-body bg-accent/10 hover:bg-accent/20 text-accent"
           >
             + New project
           </button>
@@ -104,7 +104,7 @@ export default function Sidebar({
             />
             <button
               onClick={createProject}
-              className="px-2 py-1 text-xs rounded bg-accent text-accent-label"
+              className="px-2 py-1 text-footnote rounded bg-accent text-accent-label"
             >
               ✓
             </button>
@@ -114,7 +114,7 @@ export default function Sidebar({
 
       <div className="flex-1 overflow-y-auto scrollable p-1">
         {projects.length === 0 && (
-          <p className="text-xs text-label-tertiary p-3">No projects yet.</p>
+          <p className="text-footnote text-label-tertiary p-3">No projects yet.</p>
         )}
         {projects.map((p) => {
           const recs = recordingsByProject[p.id] ?? [];
@@ -126,12 +126,12 @@ export default function Sidebar({
                   onSelect({ kind: "project", projectId: p.id });
                   toggleExpand(p.id);
                 }}
-                className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm cursor-pointer group
+                className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-body cursor-pointer group
                   ${projectSelected(p.id)
                     ? "bg-accent/10 text-accent"
                     : "hover:bg-fill-tertiary text-label-primary"}`}
               >
-                <span className="text-label-tertiary text-xs w-3">{isExpanded ? "▾" : "▸"}</span>
+                <span className="text-label-tertiary text-footnote w-3">{isExpanded ? "▾" : "▸"}</span>
                 <span className="truncate flex-1">{p.name}</span>
                 <button
                   onClick={(e) => handleAddRecording(e, p.id)}
@@ -147,7 +147,7 @@ export default function Sidebar({
                   onClick={() =>
                     onSelect({ kind: "recording", projectId: p.id, recordingId: r.id })
                   }
-                  className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-sm
+                  className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-body
                     ${recordingSelected(r.id)
                       ? "bg-accent/10 text-accent"
                       : "hover:bg-fill-tertiary text-label-secondary"}`}
@@ -157,7 +157,7 @@ export default function Sidebar({
                 </button>
               ))}
               {isExpanded && recs.length === 0 && (
-                <p className="pl-7 py-1 text-xs text-label-tertiary">No recordings</p>
+                <p className="pl-7 py-1 text-footnote text-label-tertiary">No recordings</p>
               )}
             </div>
           );

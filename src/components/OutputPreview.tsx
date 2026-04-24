@@ -14,7 +14,7 @@ export default function OutputPreview({ transcript, formatted, savedPaths }: Pro
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-2 text-xs">
+      <div className="flex gap-2 text-footnote">
         <button
           onClick={() => setTab("formatted")}
           className={`px-3 py-1 rounded ${
@@ -32,11 +32,11 @@ export default function OutputPreview({ transcript, formatted, savedPaths }: Pro
           Transcript
         </button>
       </div>
-      <pre className="bg-control-background border border-separator rounded-xl p-4 text-xs font-mono text-label-primary whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
+      <pre className="bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
         {tab === "formatted" ? (formatted ?? "") : (transcript ?? "")}
       </pre>
       {savedPaths && savedPaths.length > 0 && (
-        <div className="text-xs text-label-secondary">
+        <div className="text-footnote text-label-secondary">
           Saved to:
           <ul className="mt-1">
             {savedPaths.map((p) => <li key={p} className="truncate">· {p}</li>)}

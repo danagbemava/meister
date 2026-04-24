@@ -40,10 +40,10 @@ export default function StageCard({ kind, status, error, subtitle, progress }: P
       <div className="flex items-center gap-3">
         <span className="text-xl">{ICONS[kind]}</span>
         <div className="flex-1">
-          <div className="text-sm font-medium">{LABELS[kind]}</div>
-          {subtitle && <div className="text-xs text-label-secondary">{subtitle}</div>}
+          <div className="text-body font-medium">{LABELS[kind]}</div>
+          {subtitle && <div className="text-footnote text-label-secondary">{subtitle}</div>}
         </div>
-        <div className={`text-xs ${
+        <div className={`text-footnote ${
           status === "failed" ? "text-status-error"
           : status === "completed" ? "text-status-success"
           : status === "running" ? "text-accent"
@@ -57,7 +57,7 @@ export default function StageCard({ kind, status, error, subtitle, progress }: P
         </div>
       )}
       {status === "failed" && error && (
-        <pre className="text-xs text-status-error whitespace-pre-wrap font-mono">{error}</pre>
+        <pre className="text-footnote text-status-error whitespace-pre-wrap font-mono">{error}</pre>
       )}
     </div>
   );
