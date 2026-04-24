@@ -5,18 +5,18 @@
 
 ## Problem
 
-The transcription stage is now the slowest step after formatting was parallelized, and whisper frequently produces two classes of hallucinations on real recordings:
+Formatting remains the end-to-end bottleneck, but transcription is slow in its own right and — more importantly — whisper frequently produces two classes of hallucinations on real recordings:
 
 - **Repetition loops (type A)** — the same plausible-looking sentence is emitted many times in a row. Observed in production: one recording produced 23 consecutive copies of "And the iron rod and cement are growing up." followed by 34 copies of "I think it's a little different." Neither line is boilerplate; whisper locked into the decode and couldn't escape.
 - **Fabricated boilerplate (type B)** — "Thank you for watching", "Please subscribe", "[Music]", "ご視聴ありがとうございました" inserted in silent or low-audio stretches. Whisper's training data is dominated by YouTube, and silence is its favorite excuse to emit a YouTube outro.
 
-Both classes share a single root cause: whisper is being fed 30-second windows that are silent or near-silent, and has to emit *something*. If we don't feed it silence, both classes largely disappear. Silence removal is also the largest single speed lever, because typical meeting audio is 20–40% silence that whisper is currently processing for nothing.
+Both classes share a single root cause: whisper is being fed 30-second windows that are silent or near-silent, and has to emit *something*. If we don't feed it silence, both classes largely disappear. Silence removal is also a sizable speed lever — typical meeting audio is 20–40% silence that whisper is currently processing for nothing — though formatting will stay the dominant end-to-end cost.
 
 ## Goals
 
 - Eliminate or near-eliminate repetition-loop hallucinations on real recordings.
 - Eliminate YouTube-boilerplate hallucinations.
-- Reduce transcription wall time by 20–40% on typical meeting audio.
+- Reduce transcription wall time by 20–40% on typical meeting audio (secondary to the quality goals; formatting remains the end-to-end bottleneck).
 - No new heavy dependencies (no onnxruntime, no external VAD service).
 - No changes to public API surface (`run_transcribe`, orchestrator contract, UI events) except what follows naturally from reduced hallucinations.
 
