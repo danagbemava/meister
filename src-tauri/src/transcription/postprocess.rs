@@ -125,6 +125,7 @@ pub(crate) fn is_hallucination(segment: &str) -> bool {
     full_segment_patterns().iter().any(|re| re.is_match(trimmed))
 }
 
+#[allow(dead_code)] // engine.rs inlines the filter loop to log drops; keep this for tests + future callers.
 pub(crate) fn filter_hallucinations(segments: &[String]) -> Vec<String> {
     segments
         .iter()

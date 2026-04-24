@@ -87,8 +87,29 @@ pub fn transcribe_wav_with_callback(
     progress_cb: impl Fn(i32) + Send + Sync + 'static,
 ) -> Result<String, String> {
     let samples = read_wav_as_f32_mono(wav_path)?;
-    let samples = crate::transcription::silence::gate_silence(&samples, 16_000);
+    let samples_before = samples.len();
+    let tag = wav_path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+
+    let samples = if std::env::var("MEISTER_NO_SILENCE_GATE").as_deref() == Ok("1") {
+        eprintln!(
+            "[transcribe:{tag}] silence gate BYPASSED (MEISTER_NO_SILENCE_GATE=1); {samples_before} samples"
+        );
+        samples
+    } else {
+        let gated = crate::transcription::silence::gate_silence(&samples, 16_000);
+        let pct = if samples_before == 0 {
+            0.0
+        } else {
+            (gated.len() as f64 / samples_before as f64) * 100.0
+        };
+        eprintln!(
+            "[transcribe:{tag}] silence gate: {samples_before} → {} samples ({pct:.1}% kept)",
+            gated.len()
+        );
+        gated
+    };
     if samples.is_empty() {
+        eprintln!("[transcribe:{tag}] empty after gate; returning empty transcript");
         return Ok(String::new());
     }
     let ctx = load_context(models_dir, size)?;
@@ -141,9 +162,56 @@ pub fn transcribe_wav_with_callback(
             state.full_get_segment_text(i).map_err(|e| format!("segment {i}: {e}"))?,
         );
     }
+
+    let mut lengths: Vec<usize> = segments.iter().map(|s| s.trim().len()).collect();
+    lengths.sort_unstable_by(|a, b| b.cmp(a));
+    let top5: Vec<usize> = lengths.iter().take(5).copied().collect();
+    eprintln!(
+        "[transcribe:{tag}] raw whisper segments: {} (top-5 lengths: {:?})",
+        segments.len(),
+        top5
+    );
+    for (i, seg) in segments.iter().take(20).enumerate() {
+        let trimmed = seg.trim();
+        let preview: String = trimmed.chars().take(160).collect();
+        let suffix = if preview.chars().count() < trimmed.chars().count() { "…" } else { "" };
+        eprintln!(
+            "[transcribe:{tag}]   raw[{i}] len={}: {preview:?}{suffix}",
+            trimmed.len()
+        );
+    }
+
+    let before_collapse = segments.len();
     let segments = crate::transcription::postprocess::collapse_repetitions(&segments);
-    let segments = crate::transcription::postprocess::filter_hallucinations(&segments);
-    Ok(segments.join(" ").trim().to_string())
+    eprintln!(
+        "[transcribe:{tag}] collapse_repetitions: {before_collapse} → {} (dropped {})",
+        segments.len(),
+        before_collapse - segments.len()
+    );
+
+    let before_filter = segments.len();
+    let mut kept: Vec<String> = Vec::with_capacity(segments.len());
+    let mut filter_drops: Vec<String> = Vec::new();
+    for seg in segments {
+        if crate::transcription::postprocess::is_hallucination(&seg) {
+            if filter_drops.len() < 10 {
+                filter_drops.push(seg);
+            }
+        } else {
+            kept.push(seg);
+        }
+    }
+    eprintln!(
+        "[transcribe:{tag}] filter_hallucinations: {before_filter} → {} (dropped {}){}",
+        kept.len(),
+        before_filter - kept.len(),
+        if filter_drops.is_empty() { "".to_string() } else { format!("; first drops:") }
+    );
+    for d in &filter_drops {
+        eprintln!("[transcribe:{tag}]   filtered: {:?}", d.trim());
+    }
+
+    Ok(kept.join(" ").trim().to_string())
 }
 
 #[cfg(test)]
