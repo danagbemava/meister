@@ -117,7 +117,7 @@ export default function SettingsForm({ settings, onChange }: Props) {
                 className={`px-4 py-2 rounded-lg text-sm transition-colors flex flex-col items-center gap-0.5
                   ${active
                     ? "bg-accent/20 border border-accent text-accent"
-                    : "bg-surface-secondary border border-white/10 text-white/50 hover:border-white/20"}`}>
+                    : "bg-control-background border border-separator text-label-secondary hover:border-separator"}`}>
                 <span className="font-medium">{label}</span>
                 <span className="text-[10px] opacity-60">{desc}</span>
               </button>
@@ -145,7 +145,7 @@ export default function SettingsForm({ settings, onChange }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider">{title}</h2>
+      <h2 className="text-xs font-semibold text-label-secondary uppercase tracking-wider">{title}</h2>
       {children}
     </div>
   );
@@ -154,7 +154,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm text-white/60">{label}</label>
+      <label className="text-sm text-label-secondary">{label}</label>
       {children}
     </div>
   );

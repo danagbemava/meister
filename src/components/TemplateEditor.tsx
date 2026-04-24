@@ -42,7 +42,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-white/50 uppercase tracking-wider">
+        <label className="text-xs font-medium text-label-secondary uppercase tracking-wider">
           Format Template
         </label>
         <button
@@ -54,7 +54,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
       </div>
       <div
         className={`relative rounded-xl border transition-colors
-          ${dragging ? "border-accent bg-accent/10" : "border-white/10"}`}
+          ${dragging ? "border-accent bg-accent/10" : "border-separator"}`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
@@ -66,7 +66,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
         )}
         <textarea
           ref={textRef}
-          className="w-full h-48 bg-surface-secondary rounded-xl p-4 text-sm font-mono text-white/80 resize-y outline-none focus:ring-1 focus:ring-accent/50 placeholder-white/20 scrollable"
+          className="w-full h-48 bg-control-background rounded-xl p-4 text-sm font-mono text-label-primary resize-y outline-none focus:ring-1 focus:ring-focus-ring focus:border-accent placeholder-label-tertiary scrollable"
           placeholder={"# Meeting Minutes\nDate: [DATE]\n..."}
           value={template.content}
           onChange={(e) =>
@@ -76,7 +76,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
         />
       </div>
       {template.sourcePath && (
-        <p className="text-xs text-white/30 truncate">
+        <p className="text-xs text-label-tertiary truncate">
           Loaded: {filename(template.sourcePath)}
         </p>
       )}

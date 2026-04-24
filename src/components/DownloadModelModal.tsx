@@ -70,19 +70,19 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-surface rounded-xl shadow-2xl w-[420px] p-6 flex flex-col gap-4">
+      <div className="bg-control-background border border-separator rounded-xl shadow-2xl w-[420px] p-6 flex flex-col gap-4">
         {state === "confirm" && (
           <>
             <h2 className="text-lg font-semibold">Download {size} model?</h2>
-            <p className="text-sm text-white/70">
+            <p className="text-sm text-label-secondary">
               This is a one-time download of <strong>{formatGB(totalBytesEstimate)}</strong>.
               The bundled <code className="font-mono">base</code> model will continue to work in the meantime.
             </p>
             <div className="flex justify-end gap-2 mt-2">
               <button onClick={cancel}
-                className="px-4 py-2 rounded-lg bg-surface-secondary hover:bg-surface-tertiary text-sm">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-control-background hover:bg-fill-tertiary text-sm">Cancel</button>
               <button onClick={startDownload}
-                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-sm font-semibold">Download</button>
+                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-accent-label text-sm font-semibold">Download</button>
             </div>
           </>
         )}
@@ -90,28 +90,28 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
         {state === "downloading" && (
           <>
             <h2 className="text-lg font-semibold">Downloading {size}…</h2>
-            <div className="h-2 bg-surface-secondary rounded overflow-hidden">
+            <div className="h-2 bg-fill-tertiary rounded overflow-hidden">
               <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
             </div>
-            <p className="text-xs text-white/60 font-mono">
+            <p className="text-xs text-label-secondary font-mono">
               {formatMB(bytesDone)} / {formatMB(bytesTotal)} ({pct}%)
             </p>
             <div className="flex justify-end mt-2">
               <button onClick={cancel}
-                className="px-4 py-2 rounded-lg bg-surface-secondary hover:bg-surface-tertiary text-sm">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-control-background hover:bg-fill-tertiary text-sm">Cancel</button>
             </div>
           </>
         )}
 
         {state === "error" && (
           <>
-            <h2 className="text-lg font-semibold text-red-400">Download failed</h2>
-            <p className="text-sm text-white/70 break-words">{errorMsg}</p>
+            <h2 className="text-lg font-semibold text-status-error">Download failed</h2>
+            <p className="text-sm text-label-secondary break-words">{errorMsg}</p>
             <div className="flex justify-end gap-2 mt-2">
               <button onClick={onCancel}
-                className="px-4 py-2 rounded-lg bg-surface-secondary hover:bg-surface-tertiary text-sm">Close</button>
+                className="px-4 py-2 rounded-lg bg-control-background hover:bg-fill-tertiary text-sm">Close</button>
               <button onClick={startDownload}
-                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-sm font-semibold">Retry</button>
+                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-accent-label text-sm font-semibold">Retry</button>
             </div>
           </>
         )}
