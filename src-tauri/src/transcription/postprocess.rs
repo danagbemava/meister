@@ -1,6 +1,8 @@
 //! Post-processing of whisper segment output: collapses lock-in loops
 //! and drops known hallucinated boilerplate.
 
+use std::sync::OnceLock;
+
 /// Runs of ≥ REPETITION_THRESHOLD consecutive segments that normalize to
 /// the same string collapse to a single surviving segment (the first);
 /// shorter runs pass through unchanged. Two-in-a-row is plausibly
@@ -77,8 +79,58 @@ fn normalize(s: &str) -> String {
     result.to_string()
 }
 
+const LITERAL_BLOCKLIST: &[&str] = &[
+    "thank you for watching",
+    "thanks for watching",
+    "please subscribe",
+    "like and subscribe",
+    "don't forget to subscribe",
+    "see you in the next video",
+    "see you next time",
+    "[music]",
+    "[applause]",
+    "[laughter]",
+    "♪",
+    "ご視聴ありがとうございました",
+    "字幕 by",
+    "translated by",
+];
+
+fn full_segment_patterns() -> &'static [regex::Regex] {
+    static PATTERNS: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        [
+            r"^(?i)(you|thank you|thanks)[.!\s]*$",
+            r"^\s*\.*\s*$",
+            r"^\[?\s*(?i)inaudible\s*\]?$",
+        ]
+        .iter()
+        .map(|p| regex::Regex::new(p).expect("hallucination pattern should compile"))
+        .collect()
+    })
+}
+
+/// True if a segment matches any known hallucination pattern. Matched
+/// case-insensitively against the trimmed segment. Literal entries are
+/// substring matches; regex entries are full-segment matches.
+pub(crate) fn is_hallucination(segment: &str) -> bool {
+    let trimmed = segment.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    if LITERAL_BLOCKLIST.iter().any(|needle| lower.contains(needle)) {
+        return true;
+    }
+    full_segment_patterns().iter().any(|re| re.is_match(trimmed))
+}
+
 pub(crate) fn filter_hallucinations(segments: &[String]) -> Vec<String> {
-    segments.to_vec()
+    segments
+        .iter()
+        .filter(|s| !is_hallucination(s))
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -156,5 +208,90 @@ mod tests {
     fn collapse_empty_input_returns_empty() {
         let out = collapse_repetitions(&[]);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn hallucination_matches_youtube_boilerplate() {
+        assert!(is_hallucination("Thank you for watching!"));
+        assert!(is_hallucination("thanks for watching"));
+        assert!(is_hallucination("Please subscribe and hit the bell."));
+        assert!(is_hallucination("like and subscribe"));
+        assert!(is_hallucination("Don't forget to subscribe."));
+        assert!(is_hallucination("See you in the next video."));
+        assert!(is_hallucination("See you next time."));
+    }
+
+    #[test]
+    fn hallucination_matches_bracket_markers() {
+        assert!(is_hallucination("[Music]"));
+        assert!(is_hallucination("[MUSIC]"));
+        assert!(is_hallucination("[Applause]"));
+        assert!(is_hallucination("[Laughter]"));
+        assert!(is_hallucination("♪"));
+    }
+
+    #[test]
+    fn hallucination_matches_non_english_boilerplate() {
+        assert!(is_hallucination("ご視聴ありがとうございました"));
+        assert!(is_hallucination("字幕 by someone"));
+        assert!(is_hallucination("Translated by fan-sub team"));
+    }
+
+    #[test]
+    fn hallucination_matches_short_forms() {
+        assert!(is_hallucination("you"));
+        assert!(is_hallucination("You."));
+        assert!(is_hallucination("Thank you."));
+        assert!(is_hallucination("Thanks."));
+        assert!(is_hallucination(""));
+        assert!(is_hallucination("   "));
+        assert!(is_hallucination("..."));
+        assert!(is_hallucination("[inaudible]"));
+        assert!(is_hallucination("inaudible"));
+    }
+
+    #[test]
+    fn hallucination_preserves_legit_content() {
+        assert!(!is_hallucination("I think we should ship next week."));
+        assert!(!is_hallucination("Thanks, John."));
+        assert!(!is_hallucination("This is a video about Kubernetes."));
+        assert!(!is_hallucination("[inaudible speech at 2:34]"));
+        assert!(!is_hallucination("Yes, exactly."));
+        assert!(!is_hallucination("You should try the new API."));
+    }
+
+    #[test]
+    fn filter_drops_hallucinations_preserves_order() {
+        let input = segs(&[
+            "Good morning.",
+            "[Music]",
+            "Let's start the review.",
+            "Thank you for watching.",
+            "Next item on the agenda.",
+        ]);
+        let out = filter_hallucinations(&input);
+        assert_eq!(out, segs(&[
+            "Good morning.",
+            "Let's start the review.",
+            "Next item on the agenda.",
+        ]));
+    }
+
+    #[test]
+    fn compound_collapse_then_filter_real_sample() {
+        let mut input: Vec<String> = Vec::new();
+        for _ in 0..23 {
+            input.push("And the iron rod and cement are growing up.".to_string());
+        }
+        input.push("Thank you for watching!".to_string());
+        for _ in 0..34 {
+            input.push("I think it's a little different.".to_string());
+        }
+        let collapsed = collapse_repetitions(&input);
+        let out = filter_hallucinations(&collapsed);
+        assert_eq!(out, segs(&[
+            "And the iron rod and cement are growing up.",
+            "I think it's a little different.",
+        ]));
     }
 }
