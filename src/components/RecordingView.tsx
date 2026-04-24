@@ -112,7 +112,8 @@ export default function RecordingView({
   const savedPaths = stageOf("save")?.savedPaths ?? [];
   const anyFailed = rec.stages.some((s) => s.status === "failed");
   const allCompleted = rec.stages.every((s) => s.status === "completed");
-  const canRun = !running && !allCompleted; // re-run happens via Start over + Run
+  const backendRunning = rec.stages.some((s) => s.status === "running");
+  const canRun = !running && !backendRunning && !allCompleted; // re-run happens via Start over + Run
 
   const run = async () => {
     setRunning(true);
@@ -348,7 +349,7 @@ export default function RecordingView({
           onClick={run}
           className="px-6 py-2 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
         >
-          {running ? "Running…" : anyFailed ? "Resume" : "Run"}
+          {running || backendRunning ? "Running…" : anyFailed ? "Resume" : "Run"}
         </button>
       </div>
     </div>
