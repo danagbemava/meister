@@ -7,13 +7,13 @@ export default function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="h-11 flex items-center px-4 select-none shrink-0"
+      className="h-11 flex items-center px-4 select-none shrink-0 bg-window-background"
     >
       {/* Leave space for native traffic lights on macOS */}
       <div data-tauri-drag-region className="w-16" />
       <span
         data-tauri-drag-region
-        className="flex-1 text-center text-sm font-medium text-white/50 tracking-wide"
+        className="flex-1 text-center text-sm font-medium text-label-secondary tracking-wide"
       >
         Meister
       </span>

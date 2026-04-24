@@ -80,8 +80,8 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-60 shrink-0 border-r border-white/5 bg-surface-secondary flex flex-col">
-      <div className="p-3 border-b border-white/5">
+    <aside className="w-60 shrink-0 border-r border-separator bg-sidebar-background flex flex-col">
+      <div className="p-3 border-b border-separator">
         {!creating ? (
           <button
             onClick={() => setCreating(true)}
@@ -104,7 +104,7 @@ export default function Sidebar({
             />
             <button
               onClick={createProject}
-              className="px-2 py-1 text-xs rounded bg-accent text-surface"
+              className="px-2 py-1 text-xs rounded bg-accent text-label-primary"
             >
               ✓
             </button>
@@ -114,7 +114,7 @@ export default function Sidebar({
 
       <div className="flex-1 overflow-y-auto scrollable p-1">
         {projects.length === 0 && (
-          <p className="text-xs text-white/30 p-3">No projects yet.</p>
+          <p className="text-xs text-label-tertiary p-3">No projects yet.</p>
         )}
         {projects.map((p) => {
           const recs = recordingsByProject[p.id] ?? [];
@@ -128,14 +128,14 @@ export default function Sidebar({
                 }}
                 className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm cursor-pointer group
                   ${projectSelected(p.id)
-                    ? "bg-accent/15 text-accent"
-                    : "hover:bg-white/5 text-white/80"}`}
+                    ? "bg-accent/10 text-accent"
+                    : "hover:bg-fill-tertiary text-label-primary"}`}
               >
-                <span className="text-white/30 text-xs w-3">{isExpanded ? "▾" : "▸"}</span>
+                <span className="text-label-tertiary text-xs w-3">{isExpanded ? "▾" : "▸"}</span>
                 <span className="truncate flex-1">{p.name}</span>
                 <button
                   onClick={(e) => handleAddRecording(e, p.id)}
-                  className="text-white/30 hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-1"
+                  className="text-label-tertiary hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-1"
                   title="Add a new recording"
                 >
                   +
@@ -149,15 +149,15 @@ export default function Sidebar({
                   }
                   className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-sm
                     ${recordingSelected(r.id)
-                      ? "bg-accent/15 text-accent"
-                      : "hover:bg-white/5 text-white/70"}`}
+                      ? "bg-accent/10 text-accent"
+                      : "hover:bg-fill-tertiary text-label-secondary"}`}
                 >
                   <StatusDot status={overallStatus(r)} />
                   <span className="truncate flex-1">{r.name}</span>
                 </button>
               ))}
               {isExpanded && recs.length === 0 && (
-                <p className="pl-7 py-1 text-xs text-white/25">No recordings</p>
+                <p className="pl-7 py-1 text-xs text-label-tertiary">No recordings</p>
               )}
             </div>
           );
@@ -169,9 +169,9 @@ export default function Sidebar({
 
 function StatusDot({ status }: { status: "new" | "in_progress" | "completed" | "failed" }) {
   const color =
-    status === "failed" ? "bg-red-400"
-    : status === "completed" ? "bg-green-400"
-    : status === "in_progress" ? "bg-blue-400"
-    : "bg-white/20";
+    status === "failed" ? "bg-status-error"
+    : status === "completed" ? "bg-status-success"
+    : status === "in_progress" ? "bg-accent"
+    : "bg-fill-tertiary";
   return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${color}`} />;
 }
