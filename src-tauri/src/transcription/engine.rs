@@ -87,6 +87,10 @@ pub fn transcribe_wav_with_callback(
     progress_cb: impl Fn(i32) + Send + Sync + 'static,
 ) -> Result<String, String> {
     let samples = read_wav_as_f32_mono(wav_path)?;
+    let samples = crate::transcription::silence::gate_silence(&samples, 16_000);
+    if samples.is_empty() {
+        return Ok(String::new());
+    }
     let ctx = load_context(models_dir, size)?;
     let mut state = ctx.create_state().map_err(|e| format!("create state: {e}"))?;
 
@@ -100,6 +104,12 @@ pub fn transcribe_wav_with_callback(
     // perpetuate itself through the tail of the audio.
     params.set_no_context(true);
     params.set_suppress_non_speech_tokens(true);
+    params.set_temperature(0.0);
+    params.set_temperature_inc(0.2);
+    params.set_no_speech_thold(0.6);
+    params.set_logprob_thold(-1.0);
+    params.set_entropy_thold(2.4);
+    params.set_suppress_blank(true);
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_special(false);
@@ -125,11 +135,15 @@ pub fn transcribe_wav_with_callback(
     result?;
 
     let n = state.full_n_segments().map_err(|e| format!("n_segments: {e}"))?;
-    let mut out = String::new();
+    let mut segments: Vec<String> = Vec::with_capacity(n as usize);
     for i in 0..n {
-        out.push_str(&state.full_get_segment_text(i).map_err(|e| format!("segment {i}: {e}"))?);
+        segments.push(
+            state.full_get_segment_text(i).map_err(|e| format!("segment {i}: {e}"))?,
+        );
     }
-    Ok(out.trim().to_string())
+    let segments = crate::transcription::postprocess::collapse_repetitions(&segments);
+    let segments = crate::transcription::postprocess::filter_hallucinations(&segments);
+    Ok(segments.join(" ").trim().to_string())
 }
 
 #[cfg(test)]
