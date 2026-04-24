@@ -1,0 +1,92 @@
+/*
+ * Design tokens — macOS semantic color + typography foundation.
+ *
+ * Opaque tokens are stored as space-separated rgb triplets so Tailwind's
+ * `<alpha-value>` modifier works (e.g. `bg-accent/20`). Inherent-alpha
+ * tokens are stored as full rgba() strings; alpha-modifier is not supported.
+ *
+ * Light is the default on :root; dark is applied by [data-appearance="dark"].
+ * --color-accent-rgb is a placeholder; src/lib/accent.ts overrides it at boot.
+ */
+
+:root,
+[data-appearance="light"] {
+  /* Backgrounds (opaque) */
+  --color-window-background-rgb:      236 236 236;
+  --color-under-page-background-rgb:  150 150 150;
+  --color-control-background-rgb:     255 255 255;
+  --color-sidebar-background-rgb:     232 232 232;
+
+  /* Labels (inherent alpha) */
+  --color-label-primary:     rgba(0 0 0 / 0.85);
+  --color-label-secondary:   rgba(0 0 0 / 0.55);
+  --color-label-tertiary:    rgba(0 0 0 / 0.25);
+  --color-label-quaternary:  rgba(0 0 0 / 0.10);
+  --color-text-placeholder:  rgba(0 0 0 / 0.30);
+
+  /* Separators & fills (inherent alpha) */
+  --color-separator:         rgba(0 0 0 / 0.10);
+  --color-fill-primary:      rgba(120 120 128 / 0.20);
+  --color-fill-secondary:    rgba(120 120 128 / 0.16);
+  --color-fill-tertiary:     rgba(118 118 128 / 0.12);
+  --color-fill-quaternary:   rgba(116 116 128 / 0.08);
+
+  /* Controls */
+  --color-control-text:              rgba(0 0 0 / 0.85);
+  --color-control-text-disabled:     rgba(0 0 0 / 0.25);
+  --color-control-selected-text-rgb: 255 255 255;
+
+  /* Accent — overridden by src/lib/accent.ts */
+  --color-accent-rgb:         0 122 255;
+  --color-accent-hover-rgb:   42 142 255;
+  --color-accent-pressed-rgb: 0 107 229;
+  --color-accent-label-rgb:   255 255 255;
+
+  /* Status (opaque) */
+  --color-status-success-rgb: 40 205 65;
+  --color-status-warning-rgb: 255 149 0;
+  --color-status-error-rgb:   255 59 48;
+  --color-status-info-rgb:    0 122 255;
+}
+
+[data-appearance="dark"] {
+  /* Backgrounds */
+  --color-window-background-rgb:      30 30 30;
+  --color-under-page-background-rgb:  40 40 40;
+  --color-control-background-rgb:     30 30 30;
+  --color-sidebar-background-rgb:     37 37 39;
+
+  /* Labels */
+  --color-label-primary:     rgba(255 255 255 / 0.85);
+  --color-label-secondary:   rgba(255 255 255 / 0.55);
+  --color-label-tertiary:    rgba(255 255 255 / 0.25);
+  --color-label-quaternary:  rgba(255 255 255 / 0.10);
+  --color-text-placeholder:  rgba(255 255 255 / 0.30);
+
+  /* Separators & fills */
+  --color-separator:        rgba(255 255 255 / 0.12);
+  --color-fill-primary:     rgba(120 120 128 / 0.36);
+  --color-fill-secondary:   rgba(120 120 128 / 0.32);
+  --color-fill-tertiary:    rgba(118 118 128 / 0.27);
+  --color-fill-quaternary:  rgba(118 118 128 / 0.23);
+
+  /* Controls */
+  --color-control-text:              rgba(255 255 255 / 0.85);
+  --color-control-text-disabled:     rgba(255 255 255 / 0.25);
+  --color-control-selected-text-rgb: 255 255 255;
+
+  /* Accent — overridden at runtime */
+  --color-accent-rgb:         10 132 255;
+  --color-accent-hover-rgb:   58 156 255;
+  --color-accent-pressed-rgb: 0 113 229;
+  --color-accent-label-rgb:   255 255 255;
+
+  /* Status */
+  --color-status-success-rgb: 50 215 75;
+  --color-status-warning-rgb: 255 159 10;
+  --color-status-error-rgb:   255 69 58;
+  --color-status-info-rgb:    10 132 255;
+}
+
+/* Typography scale — Apple macOS HIG. Classes: text-{name}. */
+/* Tailwind reads these via fontSize entries; line-heights in the same var. */
