@@ -119,10 +119,10 @@ export default function ProjectView({
     onProjectChanged();
   };
 
-  if (!project) return <div className="p-8 text-white/40">Loading…</div>;
+  if (!project) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   return (
-    <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8">
+    <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8 bg-window-background">
       <div className="flex items-center justify-between">
         {renaming ? (
           <input
@@ -151,7 +151,7 @@ export default function ProjectView({
         )}
         <button
           onClick={deleteProject}
-          className="text-xs text-white/40 hover:text-red-400"
+          className="text-xs text-label-tertiary hover:text-status-error"
         >
           Delete project
         </button>
@@ -163,7 +163,7 @@ export default function ProjectView({
       />
 
       <div>
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+        <h2 className="text-xs font-semibold text-label-tertiary uppercase tracking-wider mb-3">
           Default settings
         </h2>
         <SettingsForm
@@ -173,7 +173,7 @@ export default function ProjectView({
       </div>
 
       <div>
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+        <h2 className="text-xs font-semibold text-label-tertiary uppercase tracking-wider mb-3">
           Recordings
         </h2>
         <div className="flex flex-col gap-3">
@@ -202,7 +202,7 @@ export default function ProjectView({
           {recordings.length > 0 && (
             <ul className="flex flex-col gap-1">
               {recordings.map((r) => (
-                <li key={r.id} className="text-sm text-white/70 px-3 py-1.5 bg-surface-secondary rounded">
+                <li key={r.id} className="text-sm text-label-secondary px-3 py-1.5 bg-control-background rounded hover:bg-fill-tertiary">
                   {r.name}
                 </li>
               ))}

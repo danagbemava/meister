@@ -103,7 +103,7 @@ export default function RecordingView({
     return () => { unlisten?.(); };
   }, [recordingId, reload]);
 
-  if (!rec) return <div className="p-8 text-white/40">Loading…</div>;
+  if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>
     rec.stages.find((s) => s.stage === k);
@@ -180,7 +180,7 @@ export default function RecordingView({
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-window-background">
       <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
         <div className="flex items-center justify-between">
           {renamingRec ? (
@@ -214,12 +214,12 @@ export default function RecordingView({
             </h1>
           )}
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-white/40">{overallStatus(rec)}</span>
-            <button onClick={deleteMe} className="text-white/40 hover:text-red-400">Delete</button>
+            <span className="text-label-tertiary">{overallStatus(rec)}</span>
+            <button onClick={deleteMe} className="text-label-tertiary hover:text-status-error">Delete</button>
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-white/50 uppercase tracking-wider">
+          <span className="text-xs font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
           </span>
           <ul className="flex flex-col gap-1">
@@ -230,13 +230,13 @@ export default function RecordingView({
                   key={`${p}-${idx}`}
                   className={`flex items-center gap-3 px-3 py-1.5 rounded text-xs font-mono
                     ${missing
-                      ? "bg-red-500/10 border border-red-500/20"
-                      : "bg-surface-secondary"}`}
+                      ? "bg-status-error/10 border border-status-error/20"
+                      : "bg-control-background"}`}
                 >
-                  <span className="text-white/30 tabular-nums w-5 shrink-0">
+                  <span className="text-label-tertiary tabular-nums w-5 shrink-0">
                     {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
                   </span>
-                  <span className={`flex-1 truncate ${missing ? "text-red-400" : "text-white/60"}`} title={p}>
+                  <span className={`flex-1 truncate ${missing ? "text-status-error" : "text-label-secondary"}`} title={p}>
                     {p}
                   </span>
                   {missing && (
@@ -277,13 +277,13 @@ export default function RecordingView({
           })}
         </div>
 
-        <details className="bg-surface-secondary rounded-xl p-4">
-          <summary className="cursor-pointer text-sm text-white/60">Recording settings</summary>
+        <details className="bg-control-background rounded-xl p-4">
+          <summary className="cursor-pointer text-sm text-label-secondary">Recording settings</summary>
           <div className="mt-4 flex flex-col gap-3">
             {(() => {
               const warning = completedStageInvalidation(rec);
               return warning ? (
-                <p className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded px-3 py-2">
+                <p className="text-xs bg-status-warning/10 border border-status-warning/20 text-status-warning rounded px-3 py-2">
                   {warning}
                 </p>
               ) : null;
@@ -307,7 +307,7 @@ export default function RecordingView({
         />
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
-          <div className="text-xs text-white/40 space-y-1">
+          <div className="text-xs text-label-tertiary space-y-1">
             {formatProgress.phase === "single" && (
               <p>Formatting… {formatProgress.chars.toLocaleString()} chars</p>
             )}
@@ -317,12 +317,12 @@ export default function RecordingView({
                   Analyzing chunk {Math.min(formatProgress.chunk.completed + 1, formatProgress.chunk.total)}/
                   {formatProgress.chunk.total}…
                   {formatProgress.chars > 0 && (
-                    <span className="text-white/30"> · {formatProgress.chars.toLocaleString()} chars streamed</span>
+                    <span className="text-label-tertiary"> · {formatProgress.chars.toLocaleString()} chars streamed</span>
                   )}
                 </p>
-                <div className="h-1 w-full bg-white/5 rounded">
+                <div className="h-1 w-full bg-fill-tertiary rounded">
                   <div
-                    className="h-1 bg-white/30 rounded"
+                    className="h-1 bg-label-tertiary rounded"
                     style={{
                       width: `${(formatProgress.chunk.completed / formatProgress.chunk.total) * 100}%`,
                     }}
@@ -337,17 +337,17 @@ export default function RecordingView({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-white/5 p-4 flex items-center justify-between bg-surface">
+      <div className="shrink-0 border-t border-separator p-4 flex items-center justify-between bg-window-background">
         <button
           onClick={startOver}
-          className="text-sm text-white/50 hover:text-white"
+          className="text-sm text-label-secondary hover:text-label-primary"
         >
           Start over
         </button>
         <button
           disabled={!canRun}
           onClick={run}
-          className="px-6 py-2 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
+          className="px-6 py-2 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold text-accent-label transition-colors"
         >
           {running || backendRunning ? "Running…" : anyFailed ? "Resume" : "Run"}
         </button>
