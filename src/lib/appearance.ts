@@ -3,6 +3,7 @@ export type Appearance = "light" | "dark";
 type Listener = (a: Appearance) => void;
 
 let current: Appearance = "light";
+let initialized = false;
 const listeners = new Set<Listener>();
 
 function apply(a: Appearance) {
@@ -12,6 +13,8 @@ function apply(a: Appearance) {
 }
 
 export function initAppearance(): void {
+  if (initialized) return;
+  initialized = true;
   const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
   if (!mql) {
     console.warn("appearance: matchMedia unavailable, defaulting to dark");
@@ -29,4 +32,11 @@ export function getAppearance(): Appearance {
 export function onAppearanceChange(cb: Listener): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);
+}
+
+/** For tests only. Resets module state between test cases. */
+export function __resetForTests(): void {
+  current = "light";
+  initialized = false;
+  listeners.clear();
 }

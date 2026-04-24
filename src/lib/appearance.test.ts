@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initAppearance, getAppearance, onAppearanceChange } from "./appearance";
+import { initAppearance, getAppearance, onAppearanceChange, __resetForTests } from "./appearance";
 
 type MediaQueryListener = (e: MediaQueryListEvent) => void;
 
@@ -31,6 +31,7 @@ function mockMatchMedia(initialMatches: boolean) {
 describe("appearance", () => {
   beforeEach(() => {
     document.documentElement.removeAttribute("data-appearance");
+    __resetForTests();
   });
 
   it("sets data-appearance to 'dark' when system is dark", () => {
@@ -65,5 +66,27 @@ describe("appearance", () => {
     expect(cb).toHaveBeenCalledWith("dark");
     m.flipTo(false);
     expect(cb).toHaveBeenCalledWith("light");
+  });
+
+  it("stops notifying after the unsubscribe function is called", () => {
+    const m = mockMatchMedia(false);
+    initAppearance();
+    const cb = vi.fn();
+    const unsubscribe = onAppearanceChange(cb);
+    unsubscribe();
+    m.flipTo(true);
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent — calling initAppearance twice does not double-register", () => {
+    const m = mockMatchMedia(false);
+    initAppearance();
+    initAppearance();
+    const cb = vi.fn();
+    onAppearanceChange(cb);
+    m.flipTo(true);
+    // If init registered two listeners, apply() fires twice per flip;
+    // with a single listener, it fires once.
+    expect(cb).toHaveBeenCalledTimes(1);
   });
 });
