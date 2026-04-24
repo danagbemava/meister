@@ -27,6 +27,7 @@ export default {
         "under-page-background":  "rgb(var(--color-under-page-background-rgb) / <alpha-value>)",
         "control-background":     "rgb(var(--color-control-background-rgb) / <alpha-value>)",
         "sidebar-background":     "rgb(var(--color-sidebar-background-rgb) / <alpha-value>)",
+        "scrim":                  "rgb(var(--color-scrim-rgb) / <alpha-value>)",
         "control-selected-text":  "rgb(var(--color-control-selected-text-rgb) / <alpha-value>)",
         "accent":                 "rgb(var(--color-accent-rgb) / <alpha-value>)",
         "accent-hover":           "rgb(var(--color-accent-hover-rgb) / <alpha-value>)",

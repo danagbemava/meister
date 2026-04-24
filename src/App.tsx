@@ -115,10 +115,10 @@ function EmptyState({ loading, hasProjects }: { loading: boolean; hasProjects: b
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center max-w-md px-8">
-        <h1 className="text-xl font-semibold mb-2">
+        <h1 className="text-title-2 font-semibold mb-2">
           {hasProjects ? "Select a project from the sidebar" : "Create your first project"}
         </h1>
-        <p className="text-sm text-label-tertiary">
+        <p className="text-body text-label-tertiary">
           Projects group recordings that share a template and default settings.
         </p>
       </div>

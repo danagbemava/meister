@@ -69,7 +69,7 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
   const pct = bytesTotal > 0 ? Math.min(100, Math.floor((bytesDone / bytesTotal) * 100)) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40">
       <div className="bg-control-background border border-separator rounded-xl shadow-2xl w-[420px] p-6 flex flex-col gap-4">
         {state === "confirm" && (
           <>
