@@ -59,7 +59,7 @@ export default function App() {
   }, [projects, recordingsByProject, refreshRecordings]);
 
   return (
-    <div className="flex flex-col h-screen bg-surface overflow-hidden">
+    <div className="flex flex-col h-screen bg-window-background overflow-hidden">
       <TitleBar />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
@@ -111,14 +111,14 @@ export default function App() {
 }
 
 function EmptyState({ loading, hasProjects }: { loading: boolean; hasProjects: boolean }) {
-  if (loading) return <div className="flex h-full items-center justify-center text-white/40">Loading…</div>;
+  if (loading) return <div className="flex h-full items-center justify-center text-label-tertiary">Loading…</div>;
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center max-w-md px-8">
         <h1 className="text-xl font-semibold mb-2">
           {hasProjects ? "Select a project from the sidebar" : "Create your first project"}
         </h1>
-        <p className="text-sm text-white/40">
+        <p className="text-sm text-label-tertiary">
           Projects group recordings that share a template and default settings.
         </p>
       </div>

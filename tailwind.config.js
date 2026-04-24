@@ -22,13 +22,6 @@ export default {
         "caption-2":   ["0.625rem", { lineHeight: "0.8125rem",fontWeight: "500" }],
       },
       colors: {
-        // Old tokens — kept during migration, removed in Task 15.
-        surface: {
-          DEFAULT: "#1c1c1e",
-          secondary: "#2c2c2e",
-          tertiary: "#3a3a3c",
-        },
-
         // Opaque — `<alpha-value>` supported.
         "window-background":      "rgb(var(--color-window-background-rgb) / <alpha-value>)",
         "under-page-background":  "rgb(var(--color-under-page-background-rgb) / <alpha-value>)",
