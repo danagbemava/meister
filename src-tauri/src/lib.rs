@@ -1,4 +1,5 @@
 mod commands;
+pub mod accent;
 pub mod transcription;
 pub mod storage;
 pub mod orchestrator;
@@ -94,6 +95,7 @@ pub fn run() {
             commands::resume_call_capture,
             commands::discard_call_capture,
             commands::stop_call_capture,
+            accent::get_system_accent,
             orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())

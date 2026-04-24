@@ -2347,6 +2347,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "block2 0.5.1",
  "cpal",
  "futures-util",
  "hound",
