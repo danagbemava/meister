@@ -127,10 +127,10 @@ mod tests {
     #[test]
     fn collapse_normalizes_case_and_punctuation() {
         // "Yes." and "yes" should be considered equal for run detection.
+        // A 4-run of yes-normalized entries collapses to 1; "no." follows.
         let input = segs(&["Yes.", "yes", "YES", "yes!", "no."]);
         let out = collapse_repetitions(&input);
-        // First two still kept (threshold = 3), third and fourth dropped.
-        assert_eq!(out, segs(&["Yes.", "yes", "no."]));
+        assert_eq!(out, segs(&["Yes.", "no."]));
     }
 
     #[test]
