@@ -45,17 +45,17 @@ export default function RecordingDropZone({ onPicked }: Props) {
       className={`rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer py-10 transition-colors
         ${dragging
           ? "border-accent bg-accent/10"
-          : "border-white/10 hover:border-white/20 bg-surface-secondary"}`}
+          : "border-separator hover:border-separator bg-fill-quaternary"}`}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onClick={openFile}
     >
       <span className="text-3xl opacity-30">🎬</span>
-      <p className="text-sm text-white/40 text-center px-4">
+      <p className="text-sm text-label-secondary text-center px-4">
         Drop one or more files here, or click to browse
       </p>
-      <p className="text-xs text-white/25">mp4 · mov · mp3 · m4a · wav · …</p>
+      <p className="text-xs text-label-tertiary">mp4 · mov · mp3 · m4a · wav · …</p>
     </div>
   );
 }

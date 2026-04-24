@@ -58,7 +58,7 @@ export default function StagingList({
   };
 
   return (
-    <div className="rounded-xl border border-white/10 bg-surface-secondary p-3 flex flex-col gap-2">
+    <div className="rounded-xl border border-separator bg-control-background p-3 flex flex-col gap-2">
       <ul className="flex flex-col">
         {paths.map((p, idx) => (
           <li
@@ -72,14 +72,14 @@ export default function StagingList({
               ${overIdx === idx ? "bg-accent/10" : ""}
               ${draggingIdx === idx ? "opacity-40" : ""}`}
           >
-            <span className="text-white/30 cursor-grab select-none" title="Drag to reorder">⋮⋮</span>
-            <span className="text-white/30 tabular-nums w-5 text-right">{idx + 1}.</span>
-            <span className="flex-1 truncate text-white/80" title={p}>
+            <span className="text-label-tertiary cursor-grab select-none" title="Drag to reorder">⋮⋮</span>
+            <span className="text-label-tertiary tabular-nums w-5 text-right">{idx + 1}.</span>
+            <span className="flex-1 truncate text-label-primary" title={p}>
               {basename(p)}
             </span>
             <button
               onClick={() => onRemove(idx)}
-              className="text-white/40 hover:text-red-400 text-xs px-1"
+              className="text-label-secondary hover:text-status-error text-xs px-1"
               title="Remove"
             >
               ✕
@@ -87,8 +87,8 @@ export default function StagingList({
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-        <label className="text-xs text-white/50 shrink-0">Name</label>
+      <div className="flex items-center gap-2 pt-2 border-t border-separator">
+        <label className="text-xs text-label-secondary shrink-0">Name</label>
         <input
           type="text"
           className="input flex-1 text-sm"
@@ -100,14 +100,14 @@ export default function StagingList({
       <div className="flex items-center justify-end gap-2">
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 rounded text-xs text-white/60 hover:text-white"
+          className="px-3 py-1.5 rounded text-xs text-label-secondary hover:text-label-primary"
         >
           Cancel
         </button>
         <button
           onClick={onCreate}
           disabled={paths.length === 0}
-          className="px-4 py-1.5 rounded text-sm bg-accent text-surface disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-4 py-1.5 rounded text-sm bg-accent text-accent-label disabled:opacity-30 disabled:cursor-not-allowed"
         >
           Create
         </button>

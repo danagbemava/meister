@@ -18,7 +18,7 @@ export default function OutputPreview({ transcript, formatted, savedPaths }: Pro
         <button
           onClick={() => setTab("formatted")}
           className={`px-3 py-1 rounded ${
-            tab === "formatted" ? "bg-accent/15 text-accent" : "text-white/50 hover:text-white/80"
+            tab === "formatted" ? "bg-accent/10 text-accent" : "text-label-secondary hover:bg-fill-tertiary"
           }`}
         >
           Formatted
@@ -26,17 +26,17 @@ export default function OutputPreview({ transcript, formatted, savedPaths }: Pro
         <button
           onClick={() => setTab("transcript")}
           className={`px-3 py-1 rounded ${
-            tab === "transcript" ? "bg-accent/15 text-accent" : "text-white/50 hover:text-white/80"
+            tab === "transcript" ? "bg-accent/10 text-accent" : "text-label-secondary hover:bg-fill-tertiary"
           }`}
         >
           Transcript
         </button>
       </div>
-      <pre className="bg-surface-secondary rounded-xl p-4 text-xs font-mono text-white/80 whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
+      <pre className="bg-control-background border border-separator rounded-xl p-4 text-xs font-mono text-label-primary whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
         {tab === "formatted" ? (formatted ?? "") : (transcript ?? "")}
       </pre>
       {savedPaths && savedPaths.length > 0 && (
-        <div className="text-xs text-white/40">
+        <div className="text-xs text-label-secondary">
           Saved to:
           <ul className="mt-1">
             {savedPaths.map((p) => <li key={p} className="truncate">· {p}</li>)}
