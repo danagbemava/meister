@@ -315,6 +315,9 @@ export default function RecordingView({
                 <p>
                   Analyzing chunk {Math.min(formatProgress.chunk.completed + 1, formatProgress.chunk.total)}/
                   {formatProgress.chunk.total}…
+                  {formatProgress.chars > 0 && (
+                    <span className="text-white/30"> · {formatProgress.chars.toLocaleString()} chars streamed</span>
+                  )}
                 </p>
                 <div className="h-1 w-full bg-white/5 rounded">
                   <div
