@@ -2,9 +2,10 @@
 //! and drops known hallucinated boilerplate.
 
 /// Runs of ≥ REPETITION_THRESHOLD consecutive segments that normalize to
-/// the same string collapse to a single occurrence. The first and second
-/// are kept (two-in-a-row is plausible emphasis); from the third onward
-/// they are dropped until the run ends.
+/// the same string collapse to a single surviving segment (the first);
+/// shorter runs pass through unchanged. Two-in-a-row is plausibly
+/// intentional emphasis ("I mean it. I mean it."); three or more is the
+/// unmistakable shape of a whisper lock-in loop.
 const REPETITION_THRESHOLD: usize = 3;
 
 pub(crate) fn collapse_repetitions(segments: &[String]) -> Vec<String> {
@@ -17,7 +18,7 @@ pub(crate) fn collapse_repetitions(segments: &[String]) -> Vec<String> {
     let norms: Vec<String> = segments.iter().map(|s| normalize(s)).collect();
     let n = norms.len();
 
-    // run_id[i] = length of the maximal run that contains index i.
+    // run_len[i] = length of the maximal run that contains index i.
     let mut run_len = vec![0usize; n];
     let mut i = 0;
     while i < n {
