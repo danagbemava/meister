@@ -6,7 +6,7 @@ pub mod storage;
 pub mod orchestrator;
 pub mod capture;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -68,6 +68,22 @@ pub fn run() {
             app.manage(std::sync::Arc::new(capture::CallCaptureRegistry::new()));
 
             accent::install_observer(app.handle().clone());
+
+            // Window vibrancy + reduce-transparency observer.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(e) = vibrancy::set_window_transparent(&window) {
+                    eprintln!("vibrancy: set_window_transparent failed: {e}");
+                    let _ = app.emit(vibrancy::VIBRANCY_UNAVAILABLE_EVENT, ());
+                }
+                if let Err(e) = vibrancy::apply_vibrancy(&window) {
+                    eprintln!("vibrancy: apply_vibrancy failed: {e}");
+                    let _ = app.emit(vibrancy::VIBRANCY_UNAVAILABLE_EVENT, ());
+                }
+            } else {
+                eprintln!("vibrancy: 'main' webview window not found at setup");
+                let _ = app.emit(vibrancy::VIBRANCY_UNAVAILABLE_EVENT, ());
+            }
+            vibrancy::install_reduce_transparency_observer(app.handle().clone());
 
             Ok(())
         })
