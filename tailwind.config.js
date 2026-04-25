@@ -23,10 +23,10 @@ export default {
       },
       colors: {
         // Opaque — `<alpha-value>` supported.
-        "window-background":      "rgb(var(--color-window-background-rgb) / <alpha-value>)",
-        "under-page-background":  "rgb(var(--color-under-page-background-rgb) / <alpha-value>)",
-        "control-background":     "rgb(var(--color-control-background-rgb) / <alpha-value>)",
-        "sidebar-background":     "rgb(var(--color-sidebar-background-rgb) / <alpha-value>)",
+        "window-background":      "rgb(var(--color-window-background-rgb) / var(--color-window-background-alpha))",
+        "under-page-background":  "rgb(var(--color-under-page-background-rgb) / var(--color-under-page-background-alpha))",
+        "control-background":     "rgb(var(--color-control-background-rgb) / var(--color-control-background-alpha))",
+        "sidebar-background":     "rgb(var(--color-sidebar-background-rgb) / var(--color-sidebar-background-alpha))",
         "scrim":                  "rgb(var(--color-scrim-rgb) / <alpha-value>)",
         "control-selected-text":  "rgb(var(--color-control-selected-text-rgb) / <alpha-value>)",
         "accent":                 "rgb(var(--color-accent-rgb) / <alpha-value>)",
