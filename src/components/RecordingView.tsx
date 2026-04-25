@@ -180,7 +180,7 @@ export default function RecordingView({
   };
 
   return (
-    <div className="h-full flex flex-col bg-window-background">
+    <div className="h-full flex flex-col">
       <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
         <div className="flex items-center justify-between">
           {renamingRec ? (

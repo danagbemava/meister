@@ -122,7 +122,7 @@ export default function ProjectView({
   if (!project) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   return (
-    <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8 bg-window-background">
+    <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8">
       <div className="flex items-center justify-between">
         {renaming ? (
           <input
