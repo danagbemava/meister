@@ -59,6 +59,11 @@ objc2-app-kit = { version = "0.2", features = [
     "NSAppearance",
     "NSColor",
     "NSColorSpace",
+    "NSResponder",
+    "NSView",
+    "NSVisualEffectView",
+    "NSWindow",
+    "NSWorkspace",
     "block2",
 ] }
 block2 = "0.5"
