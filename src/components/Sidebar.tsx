@@ -81,6 +81,7 @@ export default function Sidebar({
 
   return (
     <aside className="w-60 shrink-0 rounded-xl bg-sidebar-background flex flex-col">
+      <div data-tauri-drag-region className="h-9 shrink-0" />
       <div className="p-3 border-b border-separator">
         {!creating ? (
           <button

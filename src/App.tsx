@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import ProjectView from "./components/ProjectView";
 import RecordingView from "./components/RecordingView";
@@ -59,52 +58,49 @@ export default function App() {
   }, [projects, recordingsByProject, refreshRecordings]);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <TitleBar />
-      <div className="flex-1 flex gap-2 px-2 pb-2 overflow-hidden">
-        <Sidebar
-          projects={projects}
-          recordingsByProject={recordingsByProject}
-          selection={selection}
-          onSelect={guardedSelect}
-          onProjectsChanged={refreshProjects}
-          onPickFilesForProject={(projectId, paths) => {
-            guardedSelect({ kind: "project", projectId });
-            setPendingStagedPaths({ projectId, paths });
-          }}
-        />
-        <div className="flex-1 rounded-xl bg-control-background overflow-hidden">
-          {selection.kind === "none" && (
-            <EmptyState loading={loadingProjects} hasProjects={projects.length > 0} />
-          )}
-          {selection.kind === "project" && (
-            <ProjectView
-              projectId={selection.projectId}
-              onProjectChanged={refreshProjects}
-              onRecordingCreated={(r) => {
-                refreshRecordings(r.projectId);
-                setSelection({ kind: "recording", projectId: r.projectId, recordingId: r.id });
-              }}
-              initialStagedPaths={
-                pendingStagedPaths?.projectId === selection.projectId
-                  ? pendingStagedPaths.paths
-                  : undefined
-              }
-              onInitialStagedConsumed={() => setPendingStagedPaths(null)}
-              onCaptureActiveChange={registerActiveCapture}
-            />
-          )}
-          {selection.kind === "recording" && (
-            <RecordingView
-              recordingId={selection.recordingId}
-              onRecordingChanged={() => refreshRecordings(selection.projectId)}
-              onRecordingDeleted={() => {
-                refreshRecordings(selection.projectId);
-                setSelection({ kind: "project", projectId: selection.projectId });
-              }}
-            />
-          )}
-        </div>
+    <div className="h-screen flex gap-2 p-2 overflow-hidden">
+      <Sidebar
+        projects={projects}
+        recordingsByProject={recordingsByProject}
+        selection={selection}
+        onSelect={guardedSelect}
+        onProjectsChanged={refreshProjects}
+        onPickFilesForProject={(projectId, paths) => {
+          guardedSelect({ kind: "project", projectId });
+          setPendingStagedPaths({ projectId, paths });
+        }}
+      />
+      <div className="flex-1 rounded-xl bg-control-background overflow-hidden">
+        {selection.kind === "none" && (
+          <EmptyState loading={loadingProjects} hasProjects={projects.length > 0} />
+        )}
+        {selection.kind === "project" && (
+          <ProjectView
+            projectId={selection.projectId}
+            onProjectChanged={refreshProjects}
+            onRecordingCreated={(r) => {
+              refreshRecordings(r.projectId);
+              setSelection({ kind: "recording", projectId: r.projectId, recordingId: r.id });
+            }}
+            initialStagedPaths={
+              pendingStagedPaths?.projectId === selection.projectId
+                ? pendingStagedPaths.paths
+                : undefined
+            }
+            onInitialStagedConsumed={() => setPendingStagedPaths(null)}
+            onCaptureActiveChange={registerActiveCapture}
+          />
+        )}
+        {selection.kind === "recording" && (
+          <RecordingView
+            recordingId={selection.recordingId}
+            onRecordingChanged={() => refreshRecordings(selection.projectId)}
+            onRecordingDeleted={() => {
+              refreshRecordings(selection.projectId);
+              setSelection({ kind: "project", projectId: selection.projectId });
+            }}
+          />
+        )}
       </div>
     </div>
   );
