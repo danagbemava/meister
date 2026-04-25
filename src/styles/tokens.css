@@ -102,5 +102,12 @@
   --color-status-info-rgb:    10 132 255;
 }
 
+[data-reduce-transparency="true"] {
+  --color-window-background-alpha:      1;
+  --color-sidebar-background-alpha:     1;
+  --color-control-background-alpha:     1;
+  --color-under-page-background-alpha:  1;
+}
+
 /* Typography scale — Apple macOS HIG. Classes: text-{name}. */
 /* Tailwind reads these via fontSize entries; line-heights in the same var. */
