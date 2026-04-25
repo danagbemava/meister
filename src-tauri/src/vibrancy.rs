@@ -5,9 +5,10 @@
 //!   vibrancy view is what gets rendered.
 //! Both are no-ops on non-macOS targets.
 
-use tauri::{Runtime, WebviewWindow};
+use tauri::{AppHandle, Emitter, Runtime, WebviewWindow};
 
 pub const VIBRANCY_UNAVAILABLE_EVENT: &str = "vibrancy-unavailable";
+pub const REDUCE_TRANSPARENCY_CHANGED_EVENT: &str = "system-reduce-transparency-changed";
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -106,4 +107,70 @@ pub fn apply_vibrancy<R: Runtime>(_window: &WebviewWindow<R>) -> Result<(), Stri
 #[cfg(not(target_os = "macos"))]
 pub fn set_window_transparent<R: Runtime>(_window: &WebviewWindow<R>) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn read_reduce_transparency() -> bool {
+    use objc2_app_kit::NSWorkspace;
+    // SAFETY: NSWorkspace.shared is process-wide and the property accessor
+    // is thread-safe; can be called from any thread.
+    unsafe {
+        let workspace = NSWorkspace::sharedWorkspace();
+        workspace.accessibilityDisplayShouldReduceTransparency()
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_reduce_transparency() -> bool {
+    false
+}
+
+#[tauri::command]
+pub fn get_reduce_transparency() -> bool {
+    read_reduce_transparency()
+}
+
+#[cfg(target_os = "macos")]
+pub fn install_reduce_transparency_observer<R: Runtime>(app: AppHandle<R>) {
+    use block2::RcBlock;
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{ns_string, NSNotification, NSOperationQueue};
+    use std::ptr::NonNull;
+
+    let app_for_cb = app.clone();
+    let block = RcBlock::new(move |_note: NonNull<NSNotification>| {
+        let value = read_reduce_transparency();
+        if let Err(e) = app_for_cb.emit(REDUCE_TRANSPARENCY_CHANGED_EVENT, value) {
+            eprintln!("vibrancy: failed to emit reduce-transparency event: {e}");
+        }
+    });
+
+    // SAFETY: NSWorkspace.notificationCenter is the per-workspace center
+    // (NOT the distributed one) for accessibility notifications. The block
+    // outlives the observer because we leak the returned token below.
+    unsafe {
+        let workspace = NSWorkspace::sharedWorkspace();
+        let center = workspace.notificationCenter();
+        let token = center.addObserverForName_object_queue_usingBlock(
+            Some(ns_string!("NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification")),
+            None,
+            Some(&NSOperationQueue::mainQueue()),
+            &block,
+        );
+        std::mem::forget(token);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install_reduce_transparency_observer<R: Runtime>(_app: AppHandle<R>) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_reduce_transparency_returns_bool() {
+        // Just confirms the call doesn't panic and returns a bool.
+        let _: bool = get_reduce_transparency();
+    }
 }
