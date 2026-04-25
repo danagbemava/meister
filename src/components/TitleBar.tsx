@@ -11,12 +11,6 @@ export default function TitleBar() {
     >
       {/* Leave space for native traffic lights on macOS */}
       <div data-tauri-drag-region className="w-16" />
-      <span
-        data-tauri-drag-region
-        className="flex-1 text-center text-body font-medium text-label-secondary tracking-wide"
-      >
-        Meister
-      </span>
       <div data-tauri-drag-region className="w-16" />
     </div>
   );
