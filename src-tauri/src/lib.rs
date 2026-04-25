@@ -1,5 +1,6 @@
 mod commands;
 pub mod accent;
+pub mod vibrancy;
 pub mod transcription;
 pub mod storage;
 pub mod orchestrator;
