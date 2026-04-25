@@ -59,9 +59,9 @@ export default function App() {
   }, [projects, recordingsByProject, refreshRecordings]);
 
   return (
-    <div className="flex flex-col h-screen bg-window-background overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
       <TitleBar />
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex gap-2 px-2 pb-2 overflow-hidden">
         <Sidebar
           projects={projects}
           recordingsByProject={recordingsByProject}
@@ -73,7 +73,7 @@ export default function App() {
             setPendingStagedPaths({ projectId, paths });
           }}
         />
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 rounded-xl bg-control-background overflow-hidden">
           {selection.kind === "none" && (
             <EmptyState loading={loadingProjects} hasProjects={projects.length > 0} />
           )}

@@ -10,9 +10,10 @@
     "devUrl": "http://localhost:1420"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Meister",
+        "title": "",
         "width": 1100,
         "height": 760,
         "minWidth": 800,
