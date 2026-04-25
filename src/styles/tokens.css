@@ -18,6 +18,12 @@
   --color-sidebar-background-rgb:     235 236 240;
   --color-scrim-rgb:                  0 0 0;
 
+  /* Backgrounds (opaque) — alpha companions, defaults opaque */
+  --color-window-background-alpha:      1;
+  --color-under-page-background-alpha:  1;
+  --color-control-background-alpha:     1;
+  --color-sidebar-background-alpha:     1;
+
   /* Labels (inherent alpha) */
   --color-label-primary:     rgba(0 0 0 / 0.85);
   --color-label-secondary:   rgba(0 0 0 / 0.55);
@@ -57,6 +63,12 @@
   --color-control-background-rgb:     30 30 30;
   --color-sidebar-background-rgb:     37 37 39;
   --color-scrim-rgb:                  0 0 0;
+
+  /* Backgrounds — alpha companions, defaults opaque */
+  --color-window-background-alpha:      1;
+  --color-under-page-background-alpha:  1;
+  --color-control-background-alpha:     1;
+  --color-sidebar-background-alpha:     1;
 
   /* Labels */
   --color-label-primary:     rgba(255 255 255 / 0.85);
