@@ -116,6 +116,7 @@ pub fn run() {
             commands::stop_call_capture,
             accent::get_system_accent,
             vibrancy::get_reduce_transparency,
+            vibrancy::is_vibrancy_active,
             orchestrator::run_recording,
         ])
         .run(tauri::generate_context!())

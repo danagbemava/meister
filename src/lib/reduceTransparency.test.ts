@@ -19,9 +19,11 @@ describe("reduceTransparency", () => {
   });
 
   it("sets data-reduce-transparency='true' when the system setting is on", async () => {
-    invokeMock.mockImplementation(async (cmd: string) =>
-      cmd === "get_reduce_transparency" ? true : undefined,
-    );
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_reduce_transparency") return true;
+      if (cmd === "is_vibrancy_active") return true;
+      return undefined;
+    });
     await initReduceTransparency();
     expect(
       document.documentElement.dataset.reduceTransparency,
@@ -30,9 +32,11 @@ describe("reduceTransparency", () => {
   });
 
   it("removes the attribute when the system setting is off", async () => {
-    invokeMock.mockImplementation(async (cmd: string) =>
-      cmd === "get_reduce_transparency" ? false : undefined,
-    );
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_reduce_transparency") return false;
+      if (cmd === "is_vibrancy_active") return true;
+      return undefined;
+    });
     await initReduceTransparency();
     expect(
       document.documentElement.dataset.reduceTransparency,
@@ -41,7 +45,11 @@ describe("reduceTransparency", () => {
   });
 
   it("re-applies on system-reduce-transparency-changed events", async () => {
-    invokeMock.mockResolvedValue(false);
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_reduce_transparency") return false;
+      if (cmd === "is_vibrancy_active") return true;
+      return undefined;
+    });
     let handler: ((e: { payload: unknown }) => void) | undefined;
     listenMock.mockImplementation(async (event: string, cb: typeof handler) => {
       if (event === "system-reduce-transparency-changed") handler = cb;
@@ -65,7 +73,11 @@ describe("reduceTransparency", () => {
   });
 
   it("forces reduce-transparency mode when vibrancy-unavailable fires", async () => {
-    invokeMock.mockResolvedValue(false);
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_reduce_transparency") return false;
+      if (cmd === "is_vibrancy_active") return true;
+      return undefined;
+    });
     const handlers: Record<string, ((e: { payload: unknown }) => void) | undefined> = {};
     listenMock.mockImplementation(async (event: string, cb: typeof handlers[string]) => {
       handlers[event] = cb;
@@ -80,10 +92,25 @@ describe("reduceTransparency", () => {
     expect(isReduceTransparency()).toBe(true);
   });
 
+  it("forces reduce-transparency mode if vibrancy did not attach at boot", async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_reduce_transparency") return false;
+      if (cmd === "is_vibrancy_active") return false;
+      return undefined;
+    });
+    await initReduceTransparency();
+    expect(isReduceTransparency()).toBe(true);
+    expect(document.documentElement.dataset.reduceTransparency).toBe("true");
+  });
+
   it("is idempotent — calling init twice does not double-register", async () => {
-    invokeMock.mockResolvedValue(false);
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_reduce_transparency") return false;
+      if (cmd === "is_vibrancy_active") return true;
+      return undefined;
+    });
     await initReduceTransparency();
     await initReduceTransparency();
-    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -10,6 +10,17 @@ use tauri::{AppHandle, Emitter, Runtime, WebviewWindow};
 pub const VIBRANCY_UNAVAILABLE_EVENT: &str = "vibrancy-unavailable";
 pub const REDUCE_TRANSPARENCY_CHANGED_EVENT: &str = "system-reduce-transparency-changed";
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether vibrancy successfully attached at boot. Default false; set true
+/// only after a successful `apply_vibrancy` call.
+static VIBRANCY_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+pub fn is_vibrancy_active() -> bool {
+    VIBRANCY_ACTIVE.load(Ordering::Acquire)
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use objc2::rc::Retained;
@@ -67,6 +78,11 @@ pub fn apply_vibrancy<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), Strin
         return Err("apply_vibrancy: ns_window returned null".into());
     }
 
+    // SAFETY: Tauri's `WebviewWindow::ns_window()` returns a non-null pointer
+    // to a valid `NSWindow` for the lifetime of the window. We're called from
+    // the main thread during Tauri's setup phase. `Retained::retain` adds a +1
+    // to the Cocoa refcount; releasing our `Retained` will balance it. The
+    // pointer remains valid for the duration of this function's stack frame.
     let ns_window: Retained<NSWindow> = unsafe {
         Retained::retain(raw as *mut NSWindow)
             .ok_or_else(|| "apply_vibrancy: retain failed".to_string())?
@@ -74,7 +90,10 @@ pub fn apply_vibrancy<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), Strin
 
     unsafe {
         match imp::attach_vibrancy(&ns_window) {
-            Some(_) => Ok(()),
+            Some(_) => {
+                VIBRANCY_ACTIVE.store(true, Ordering::Release);
+                Ok(())
+            }
             None => Err("apply_vibrancy: contentView missing".into()),
         }
     }
@@ -91,6 +110,11 @@ pub fn set_window_transparent<R: Runtime>(window: &WebviewWindow<R>) -> Result<(
     if raw.is_null() {
         return Err("set_window_transparent: ns_window returned null".into());
     }
+    // SAFETY: Tauri's `WebviewWindow::ns_window()` returns a non-null pointer
+    // to a valid `NSWindow` for the lifetime of the window. We're called from
+    // the main thread during Tauri's setup phase. `Retained::retain` adds a +1
+    // to the Cocoa refcount; releasing our `Retained` will balance it. The
+    // pointer remains valid for the duration of this function's stack frame.
     let ns_window: Retained<NSWindow> = unsafe {
         Retained::retain(raw as *mut NSWindow)
             .ok_or_else(|| "set_window_transparent: retain failed".to_string())?

@@ -21,16 +21,29 @@ export async function initReduceTransparency(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
+  let reduceTx = false;
   try {
-    const value = await invoke<boolean>("get_reduce_transparency");
-    apply(value);
+    reduceTx = await invoke<boolean>("get_reduce_transparency");
   } catch (e) {
     console.warn(
       "reduceTransparency: get_reduce_transparency failed, defaulting to false",
       e,
     );
-    apply(false);
   }
+
+  let vibrancyActive = true;
+  try {
+    vibrancyActive = await invoke<boolean>("is_vibrancy_active");
+  } catch (e) {
+    console.warn(
+      "reduceTransparency: is_vibrancy_active failed, assuming active",
+      e,
+    );
+  }
+
+  // If user has reduce-transparency on, OR vibrancy failed to attach,
+  // force solid surfaces. Otherwise let vibrancy show through.
+  apply(reduceTx || !vibrancyActive);
 
   try {
     await listen<boolean>("system-reduce-transparency-changed", (e) => {
