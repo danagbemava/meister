@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SegmentedControl } from "./ui";
 
 interface Props {
   transcript?: string | null;
@@ -14,24 +15,15 @@ export default function OutputPreview({ transcript, formatted, savedPaths }: Pro
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-2 text-footnote">
-        <button
-          onClick={() => setTab("formatted")}
-          className={`px-3 py-1 rounded ${
-            tab === "formatted" ? "bg-accent/10 text-accent" : "text-label-secondary hover:bg-fill-tertiary"
-          }`}
-        >
-          Formatted
-        </button>
-        <button
-          onClick={() => setTab("transcript")}
-          className={`px-3 py-1 rounded ${
-            tab === "transcript" ? "bg-accent/10 text-accent" : "text-label-secondary hover:bg-fill-tertiary"
-          }`}
-        >
-          Transcript
-        </button>
-      </div>
+      <SegmentedControl
+        size="sm"
+        value={tab}
+        onValueChange={(v) => setTab(v as "formatted" | "transcript")}
+        aria-label="Output view"
+      >
+        <SegmentedControl.Item value="formatted">Formatted</SegmentedControl.Item>
+        <SegmentedControl.Item value="transcript">Transcript</SegmentedControl.Item>
+      </SegmentedControl>
       <pre className="bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
         {tab === "formatted" ? (formatted ?? "") : (transcript ?? "")}
       </pre>
