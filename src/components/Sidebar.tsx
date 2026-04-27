@@ -101,10 +101,6 @@ export default function Sidebar({
     onProjectsChanged();
   };
 
-  // Recording-row helpers are wired up in the next commit (Task 7).
-  void beginRenameRecording;
-  void deleteRecording;
-
   const toggleExpand = (id: string) =>
     setExpanded((e) => ({ ...e, [id]: !e[id] }));
 
@@ -260,19 +256,61 @@ export default function Sidebar({
                 </ContextMenu.Content>
               </ContextMenu>
               {isExpanded && recs.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() =>
-                    onSelect({ kind: "recording", projectId: p.id, recordingId: r.id })
-                  }
-                  className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-body
-                    ${recordingSelected(r.id)
-                      ? "bg-accent/10 text-accent"
-                      : "hover:bg-fill-tertiary text-label-secondary"}`}
-                >
-                  <StatusDot status={overallStatus(r)} />
-                  <span className="truncate flex-1">{r.name}</span>
-                </button>
+                <ContextMenu key={r.id}>
+                  <ContextMenu.Trigger asChild>
+                    <button
+                      onClick={() =>
+                        onSelect({
+                          kind: "recording",
+                          projectId: p.id,
+                          recordingId: r.id,
+                        })
+                      }
+                      className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-body
+                        ${recordingSelected(r.id)
+                          ? "bg-accent/10 text-accent"
+                          : "hover:bg-fill-tertiary text-label-secondary"}`}
+                    >
+                      <StatusDot status={overallStatus(r)} />
+                      {renaming?.kind === "recording" && renaming.id === r.id ? (
+                        <Input
+                          autoFocus
+                          size="sm"
+                          value={renaming.value}
+                          onChange={(e) =>
+                            setRenaming({ kind: "recording", id: r.id, value: e.target.value })
+                          }
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commitRename();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              cancelRename();
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1"
+                        />
+                      ) : (
+                        <span className="truncate flex-1">{r.name}</span>
+                      )}
+                    </button>
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Content>
+                    <ContextMenu.Item onSelect={() => beginRenameRecording(r)}>
+                      Rename
+                    </ContextMenu.Item>
+                    <ContextMenu.Separator />
+                    <ContextMenu.Item
+                      variant="destructive"
+                      onSelect={() => deleteRecording(r)}
+                    >
+                      Delete
+                    </ContextMenu.Item>
+                  </ContextMenu.Content>
+                </ContextMenu>
               ))}
               {isExpanded && recs.length === 0 && (
                 <p className="pl-7 py-1 text-footnote text-label-tertiary">No recordings</p>
