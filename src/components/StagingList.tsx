@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button, Input } from "./ui";
 
 interface Props {
   paths: string[];
@@ -77,40 +78,40 @@ export default function StagingList({
             <span className="flex-1 truncate text-label-primary" title={p}>
               {basename(p)}
             </span>
-            <button
+            <Button
               onClick={() => onRemove(idx)}
-              className="text-label-secondary hover:text-status-error text-footnote px-1"
+              variant="ghost"
+              size="sm"
+              className="hover:text-status-error"
               title="Remove"
             >
               ✕
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
       <div className="flex items-center gap-2 pt-2 border-t border-separator">
         <label className="text-footnote text-label-secondary shrink-0">Name</label>
-        <input
-          type="text"
-          className="input flex-1 text-body"
+        <Input
+          size="sm"
+          className="flex-1"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="Recording name"
         />
       </div>
       <div className="flex items-center justify-end gap-2">
-        <button
-          onClick={onCancel}
-          className="px-3 py-1.5 rounded text-footnote text-label-secondary hover:text-label-primary"
-        >
+        <Button onClick={onCancel} variant="ghost" size="sm">
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={onCreate}
           disabled={paths.length === 0}
-          className="px-4 py-1.5 rounded text-body bg-accent text-accent-label disabled:opacity-30 disabled:cursor-not-allowed"
+          variant="primary"
+          size="sm"
         >
           Create
-        </button>
+        </Button>
       </div>
     </div>
   );
