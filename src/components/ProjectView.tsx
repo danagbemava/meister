@@ -7,6 +7,7 @@ import RecordCallCard from "./RecordCallCard";
 import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
+import { Button, Input } from "./ui";
 
 interface Props {
   projectId: string;
@@ -125,9 +126,9 @@ export default function ProjectView({
     <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8">
       <div className="flex items-center justify-between">
         {renaming ? (
-          <input
+          <Input
             autoFocus
-            className="input text-title-2 font-semibold"
+            className="text-title-2 font-semibold"
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             onBlur={async () => {
@@ -149,12 +150,14 @@ export default function ProjectView({
             {project.name}
           </h1>
         )}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={deleteProject}
-          className="text-footnote text-label-tertiary hover:text-status-error"
+          className="text-status-error"
         >
           Delete project
-        </button>
+        </Button>
       </div>
 
       <TemplateEditor
