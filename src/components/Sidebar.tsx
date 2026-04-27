@@ -258,7 +258,9 @@ export default function Sidebar({
               {isExpanded && recs.map((r) => (
                 <ContextMenu key={r.id}>
                   <ContextMenu.Trigger asChild>
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() =>
                         onSelect({
                           kind: "recording",
@@ -266,7 +268,17 @@ export default function Sidebar({
                           recordingId: r.id,
                         })
                       }
-                      className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-body
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelect({
+                            kind: "recording",
+                            projectId: p.id,
+                            recordingId: r.id,
+                          });
+                        }
+                      }}
+                      className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-body cursor-pointer
                         ${recordingSelected(r.id)
                           ? "bg-accent/10 text-accent"
                           : "hover:bg-fill-tertiary text-label-secondary"}`}
@@ -296,7 +308,7 @@ export default function Sidebar({
                       ) : (
                         <span className="truncate flex-1">{r.name}</span>
                       )}
-                    </button>
+                    </div>
                   </ContextMenu.Trigger>
                   <ContextMenu.Content>
                     <ContextMenu.Item onSelect={() => beginRenameRecording(r)}>
