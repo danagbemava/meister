@@ -4,7 +4,7 @@ import type { Project, Recording } from "../types/storage";
 import { overallStatus } from "../types/storage";
 import { api } from "../api/storage";
 import type { Selection } from "../App";
-import { Button, Input } from "./ui";
+import { Button, Input, ContextMenu } from "./ui";
 
 interface Props {
   projects: Project[];
@@ -38,6 +38,72 @@ export default function Sidebar({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+
+  type RenameTarget =
+    | { kind: "project"; id: string; value: string }
+    | { kind: "recording"; id: string; value: string }
+    | null;
+
+  const [renaming, setRenaming] = useState<RenameTarget>(null);
+
+  const beginRenameProject = (p: Project) => {
+    setRenaming({ kind: "project", id: p.id, value: p.name });
+  };
+
+  const beginRenameRecording = (r: Recording) => {
+    setRenaming({ kind: "recording", id: r.id, value: r.name });
+  };
+
+  const cancelRename = () => setRenaming(null);
+
+  const commitRename = async () => {
+    if (!renaming) return;
+    const trimmed = renaming.value.trim();
+    if (!trimmed) {
+      setRenaming(null);
+      return;
+    }
+    if (renaming.kind === "project") {
+      const project = projects.find((p) => p.id === renaming.id);
+      if (project && trimmed !== project.name) {
+        await api.updateProject({ ...project, name: trimmed });
+        onProjectsChanged();
+      }
+    } else {
+      const all = Object.values(recordingsByProject).flat();
+      const rec = all.find((r) => r.id === renaming.id);
+      if (rec && trimmed !== rec.name) {
+        await api.updateRecording({ ...rec, name: trimmed });
+        onProjectsChanged();
+      }
+    }
+    setRenaming(null);
+  };
+
+  const deleteProject = async (p: Project) => {
+    if (!confirm(`Delete project "${p.name}" and all its recordings?`)) return;
+    await api.deleteProject(p.id);
+    if (selection.kind === "project" && selection.projectId === p.id) {
+      onSelect({ kind: "none" });
+    }
+    if (selection.kind === "recording" && selection.projectId === p.id) {
+      onSelect({ kind: "none" });
+    }
+    onProjectsChanged();
+  };
+
+  const deleteRecording = async (r: Recording) => {
+    if (!confirm(`Delete recording "${r.name}"?`)) return;
+    await api.deleteRecording(r.id);
+    if (selection.kind === "recording" && selection.recordingId === r.id) {
+      onSelect({ kind: "none" });
+    }
+    onProjectsChanged();
+  };
+
+  // Recording-row helpers are wired up in the next commit (Task 7).
+  void beginRenameRecording;
+  void deleteRecording;
 
   const toggleExpand = (id: string) =>
     setExpanded((e) => ({ ...e, [id]: !e[id] }));
@@ -134,26 +200,65 @@ export default function Sidebar({
           const isExpanded = expanded[p.id] ?? true;
           return (
             <div key={p.id}>
-              <div
-                onClick={() => {
-                  onSelect({ kind: "project", projectId: p.id });
-                  toggleExpand(p.id);
-                }}
-                className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-body cursor-pointer group
-                  ${projectSelected(p.id)
-                    ? "bg-accent/10 text-accent"
-                    : "hover:bg-fill-tertiary text-label-primary"}`}
-              >
-                <span className="text-label-tertiary text-footnote w-3">{isExpanded ? "▾" : "▸"}</span>
-                <span className="truncate flex-1">{p.name}</span>
-                <button
-                  onClick={(e) => handleAddRecording(e, p.id)}
-                  className="text-label-tertiary hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-1"
-                  title="Add a new recording"
-                >
-                  +
-                </button>
-              </div>
+              <ContextMenu>
+                <ContextMenu.Trigger asChild>
+                  <div
+                    onClick={() => {
+                      onSelect({ kind: "project", projectId: p.id });
+                      toggleExpand(p.id);
+                    }}
+                    className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-body cursor-pointer group
+                      ${projectSelected(p.id)
+                        ? "bg-accent/10 text-accent"
+                        : "hover:bg-fill-tertiary text-label-primary"}`}
+                  >
+                    <span className="text-label-tertiary text-footnote w-3">{isExpanded ? "▾" : "▸"}</span>
+                    {renaming?.kind === "project" && renaming.id === p.id ? (
+                      <Input
+                        autoFocus
+                        size="sm"
+                        value={renaming.value}
+                        onChange={(e) =>
+                          setRenaming({ kind: "project", id: p.id, value: e.target.value })
+                        }
+                        onBlur={commitRename}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitRename();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelRename();
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1"
+                      />
+                    ) : (
+                      <span className="truncate flex-1">{p.name}</span>
+                    )}
+                    <button
+                      onClick={(e) => handleAddRecording(e, p.id)}
+                      className="text-label-tertiary hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-1"
+                      title="Add a new recording"
+                    >
+                      +
+                    </button>
+                  </div>
+                </ContextMenu.Trigger>
+                <ContextMenu.Content>
+                  <ContextMenu.Item onSelect={() => beginRenameProject(p)}>
+                    Rename
+                  </ContextMenu.Item>
+                  <ContextMenu.Separator />
+                  <ContextMenu.Item
+                    variant="destructive"
+                    onSelect={() => deleteProject(p)}
+                  >
+                    Delete
+                  </ContextMenu.Item>
+                </ContextMenu.Content>
+              </ContextMenu>
               {isExpanded && recs.map((r) => (
                 <button
                   key={r.id}
