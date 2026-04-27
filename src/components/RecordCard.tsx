@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Button } from "./ui";
 
 type CaptureState = "idle" | "recording" | "paused" | "saving" | "error";
 
@@ -204,12 +205,12 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
         </div>
         <div className="flex gap-2 mt-2">
           {state === "recording" ? (
-            <button onClick={pause} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">⏸ Pause</button>
+            <Button onClick={pause} variant="secondary" size="md">⏸ Pause</Button>
           ) : (
-            <button onClick={resume} className="px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">▶ Resume</button>
+            <Button onClick={resume} variant="primary" size="md">▶ Resume</Button>
           )}
-          <button onClick={stop} className="px-3 py-1 rounded bg-accent text-accent-label text-body font-medium">⏹ Stop</button>
-          <button onClick={discard} className="px-3 py-1 rounded bg-window-background hover:bg-status-error/20 text-body text-label-secondary">✕ Discard</button>
+          <Button onClick={stop} variant="primary" size="md">⏹ Stop</Button>
+          <Button onClick={discard} variant="ghost" size="md" className="hover:bg-status-error/20">✕ Discard</Button>
         </div>
       </div>
     );
@@ -228,7 +229,7 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
     <div className={`${cardBase} border-solid border-status-error/30 bg-status-error/10`}>
       <span className="text-3xl opacity-50">⚠</span>
       <p className="text-body text-status-error text-center px-2">{errorMsg}</p>
-      <button onClick={retry} className="mt-2 px-3 py-1 rounded bg-window-background hover:bg-fill-tertiary text-body">Retry</button>
+      <Button onClick={retry} variant="secondary" size="md" className="mt-2">Retry</Button>
     </div>
   );
 }
