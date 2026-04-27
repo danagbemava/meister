@@ -52,16 +52,6 @@ textarea,
 .stage-dot.active  { @apply bg-accent; }
 .stage-dot.pending { @apply bg-fill-tertiary; }
 
-/* Form inputs */
-.input {
-  @apply w-full bg-control-background border border-separator rounded-lg px-3 py-2 text-body text-label-primary outline-none
-         focus:ring-1 focus:ring-focus-ring focus:border-accent transition-colors;
-}
-
-select.input option {
-  background: rgb(var(--color-control-background-rgb));
-}
-
 /* Spinner */
 @keyframes spin {
   to { transform: rotate(360deg); }
