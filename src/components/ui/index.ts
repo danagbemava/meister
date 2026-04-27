@@ -4,3 +4,5 @@ export { Textarea } from "./Textarea";
 export { Select } from "./Select";
 export { Checkbox } from "./Checkbox";
 export { Toggle } from "./Toggle";
+export { SegmentedControl } from "./SegmentedControl";
+export { ContextMenu } from "./ContextMenu";
