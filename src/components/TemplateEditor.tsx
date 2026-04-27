@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Template } from "../types/storage";
+import { Button, Textarea } from "./ui";
 
 interface Props {
   template: Template;
@@ -45,12 +46,14 @@ export default function TemplateEditor({ template, onChange }: Props) {
         <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
           Format Template
         </label>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={openFile}
-          className="text-footnote text-accent hover:text-accent-hover transition-colors"
+          className="text-footnote text-accent hover:text-accent-hover hover:bg-transparent"
         >
           {template.sourcePath ? "Load different file" : "Load from file"}
-        </button>
+        </Button>
       </div>
       <div
         className={`relative rounded-xl border transition-colors
@@ -64,9 +67,9 @@ export default function TemplateEditor({ template, onChange }: Props) {
             <p className="text-accent font-medium">Drop template file here</p>
           </div>
         )}
-        <textarea
+        <Textarea
           ref={textRef}
-          className="w-full h-48 bg-control-background rounded-xl p-4 text-body font-mono text-label-primary resize-y outline-none focus:ring-1 focus:ring-focus-ring focus:border-accent placeholder-label-tertiary scrollable"
+          className="h-48 bg-control-background rounded-xl p-4 font-mono scrollable"
           placeholder={"# Meeting Minutes\nDate: [DATE]\n..."}
           value={template.content}
           onChange={(e) =>
