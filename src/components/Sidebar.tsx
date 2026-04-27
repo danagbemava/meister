@@ -4,6 +4,7 @@ import type { Project, Recording } from "../types/storage";
 import { overallStatus } from "../types/storage";
 import { api } from "../api/storage";
 import type { Selection } from "../App";
+import { Button, Input } from "./ui";
 
 interface Props {
   projects: Project[];
@@ -84,17 +85,20 @@ export default function Sidebar({
       <div data-tauri-drag-region className="h-9 shrink-0" />
       <div className="p-3 border-b border-separator">
         {!creating ? (
-          <button
+          <Button
+            variant="primary"
+            size="md"
             onClick={() => setCreating(true)}
-            className="w-full px-3 py-2 rounded-lg text-body bg-accent/10 hover:bg-accent/20 text-accent"
+            className="w-full"
           >
             + New project
-          </button>
+          </Button>
         ) : (
           <div className="flex gap-2">
-            <input
+            <Input
               autoFocus
-              className="input flex-1"
+              size="sm"
+              className="flex-1"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
@@ -103,12 +107,20 @@ export default function Sidebar({
               }}
               placeholder="Project name"
             />
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={createProject}
-              className="px-2 py-1 text-footnote rounded bg-accent text-accent-label"
             >
               ✓
-            </button>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setCreating(false); setNewName(""); }}
+            >
+              ✕
+            </Button>
           </div>
         )}
       </div>
