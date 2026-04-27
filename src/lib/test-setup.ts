@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import "@testing-library/jest-dom/vitest";
 
 // Tauri invoke/event mocks — tests override per-case.
 vi.mock("@tauri-apps/api/core", () => ({
