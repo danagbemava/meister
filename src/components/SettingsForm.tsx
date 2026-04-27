@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, OutputFormat } from "../types/storage";
 import DownloadModelModal from "./DownloadModelModal";
+import { Checkbox, Input, Select } from "./ui";
 
 interface Props {
   settings: AppSettings;
@@ -40,10 +41,10 @@ export default function SettingsForm({ settings, onChange }: Props) {
   const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) =>
     onChange({ ...settings, [key]: val });
 
-  const toggleFormat = (fmt: OutputFormat) => {
-    const next = settings.outputFormats.includes(fmt)
-      ? settings.outputFormats.filter((f) => f !== fmt)
-      : [...settings.outputFormats, fmt];
+  const toggleFormat = (fmt: OutputFormat, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...settings.outputFormats, fmt]))
+      : settings.outputFormats.filter((f) => f !== fmt);
     if (next.length > 0) set("outputFormats", next);
   };
 
@@ -72,7 +73,7 @@ export default function SettingsForm({ settings, onChange }: Props) {
     <div className="flex flex-col gap-5">
       <Section title="Ollama">
         <Field label="Server URL">
-          <input type="text" className="input"
+          <Input
             value={settings.ollamaUrl}
             onChange={(e) => set("ollamaUrl", e.target.value)}
             onBlur={refresh}
@@ -80,12 +81,12 @@ export default function SettingsForm({ settings, onChange }: Props) {
         </Field>
         <Field label="Model">
           {ollamaModels.length > 0 ? (
-            <select className="input" value={settings.model}
+            <Select value={settings.model}
               onChange={(e) => set("model", e.target.value)}>
               {ollamaModels.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            </Select>
           ) : (
-            <input type="text" className="input" value={settings.model}
+            <Input value={settings.model}
               onChange={(e) => set("model", e.target.value)} placeholder="gemma3" />
           )}
         </Field>
@@ -93,15 +94,15 @@ export default function SettingsForm({ settings, onChange }: Props) {
 
       <Section title="Transcription">
         <Field label="Model">
-          <select className="input" value={settings.whisperModel}
+          <Select value={settings.whisperModel}
             onChange={(e) => pickWhisper(e.target.value)}>
             {modelInfos.map((m) => (
               <option key={m.size} value={m.size}>{modelLabel(m)}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Language">
-          <input type="text" className="input"
+          <Input
             value={settings.language}
             onChange={(e) => set("language", e.target.value)}
             placeholder="auto  (or e.g. en, de, fr)" />
@@ -109,20 +110,18 @@ export default function SettingsForm({ settings, onChange }: Props) {
       </Section>
 
       <Section title="Output Formats">
-        <div className="flex gap-2 flex-wrap">
-          {OUTPUT_FORMATS.map(({ id, label, desc }) => {
-            const active = settings.outputFormats.includes(id);
-            return (
-              <button key={id} onClick={() => toggleFormat(id)}
-                className={`px-4 py-2 rounded-lg text-body transition-colors flex flex-col items-center gap-0.5
-                  ${active
-                    ? "bg-accent/20 border border-accent text-accent"
-                    : "bg-control-background border border-separator text-label-secondary hover:border-separator"}`}>
-                <span className="font-medium">{label}</span>
-                <span className="text-[10px] opacity-60">{desc}</span>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-4 flex-wrap">
+          {OUTPUT_FORMATS.map(({ id, label, desc }) => (
+            <label key={id}
+              className="flex items-center gap-2 text-body text-label-primary cursor-pointer">
+              <Checkbox
+                checked={settings.outputFormats.includes(id)}
+                onCheckedChange={(c) => toggleFormat(id, Boolean(c))}
+              />
+              <span className="font-medium">{label}</span>
+              <span className="text-footnote text-label-tertiary">{desc}</span>
+            </label>
+          ))}
         </div>
       </Section>
 
