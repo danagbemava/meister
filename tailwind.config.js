@@ -3,6 +3,9 @@ export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      aria: {
+        invalid: 'invalid="true"',
+      },
       fontFamily: {
         sans: ["-apple-system", "BlinkMacSystemFont", "SF Pro Display", "Segoe UI", "sans-serif"],
         mono: ["SF Mono", "JetBrains Mono", "Fira Code", "monospace"],
