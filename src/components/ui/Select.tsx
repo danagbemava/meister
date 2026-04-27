@@ -2,7 +2,7 @@ import { forwardRef } from "react";
 import { cn } from "../../lib/cn";
 import { Size, sizeClasses, focusClasses } from "./_shared";
 
-type Props = React.SelectHTMLAttributes<HTMLSelectElement> & {
+type Props = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "size"> & {
   size?: Size;
 };
 

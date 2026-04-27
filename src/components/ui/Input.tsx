@@ -2,7 +2,7 @@ import { forwardRef } from "react";
 import { cn } from "../../lib/cn";
 import { Size, sizeClasses, focusClasses } from "./_shared";
 
-type Props = React.InputHTMLAttributes<HTMLInputElement> & {
+type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> & {
   size?: Size;
 };
 
