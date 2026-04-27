@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { Button } from "./ui";
 
 interface Props {
   size: string;
@@ -79,10 +80,8 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
               The bundled <code className="font-mono">base</code> model will continue to work in the meantime.
             </p>
             <div className="flex justify-end gap-2 mt-2">
-              <button onClick={cancel}
-                className="px-4 py-2 rounded-lg bg-control-background hover:bg-fill-tertiary text-body">Cancel</button>
-              <button onClick={startDownload}
-                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-accent-label text-headline">Download</button>
+              <Button variant="ghost" size="md" onClick={cancel}>Cancel</Button>
+              <Button variant="primary" size="md" onClick={startDownload}>Download</Button>
             </div>
           </>
         )}
@@ -97,8 +96,7 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
               {formatMB(bytesDone)} / {formatMB(bytesTotal)} ({pct}%)
             </p>
             <div className="flex justify-end mt-2">
-              <button onClick={cancel}
-                className="px-4 py-2 rounded-lg bg-control-background hover:bg-fill-tertiary text-body">Cancel</button>
+              <Button variant="ghost" size="md" onClick={cancel}>Cancel</Button>
             </div>
           </>
         )}
@@ -108,10 +106,8 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
             <h2 className="text-title-2 font-semibold text-status-error">Download failed</h2>
             <p className="text-body text-label-secondary break-words">{errorMsg}</p>
             <div className="flex justify-end gap-2 mt-2">
-              <button onClick={onCancel}
-                className="px-4 py-2 rounded-lg bg-control-background hover:bg-fill-tertiary text-body">Close</button>
-              <button onClick={startDownload}
-                className="px-4 py-2 rounded-lg bg-accent hover:bg-accent-hover text-accent-label text-headline">Retry</button>
+              <Button variant="secondary" size="md" onClick={onCancel}>Close</Button>
+              <Button variant="primary" size="md" onClick={startDownload}>Retry</Button>
             </div>
           </>
         )}
