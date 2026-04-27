@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import SettingsForm from "./SettingsForm";
+import { Button, Input } from "./ui";
 import { api } from "../api/storage";
 import {
   overallStatus,
@@ -184,9 +185,9 @@ export default function RecordingView({
       <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
         <div className="flex items-center justify-between">
           {renamingRec ? (
-            <input
+            <Input
               autoFocus
-              className="input text-title-2 font-semibold flex-1 mr-4"
+              className="text-title-2 font-semibold flex-1 mr-4"
               value={draftRecName}
               onChange={(e) => setDraftRecName(e.target.value)}
               onBlur={async () => {
@@ -215,7 +216,9 @@ export default function RecordingView({
           )}
           <div className="flex items-center gap-2 text-footnote">
             <span className="text-label-tertiary">{overallStatus(rec)}</span>
-            <button onClick={deleteMe} className="text-label-tertiary hover:text-status-error">Delete</button>
+            <Button variant="ghost" size="sm" onClick={deleteMe} className="text-status-error">
+              Delete
+            </Button>
           </div>
         </div>
         <div className="flex flex-col gap-1">
@@ -240,12 +243,14 @@ export default function RecordingView({
                     {p}
                   </span>
                   {missing && (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => locateSource(idx)}
-                      className="text-accent hover:text-accent-hover shrink-0"
+                      className="text-accent shrink-0"
                     >
                       Locate…
-                    </button>
+                    </Button>
                   )}
                 </li>
               );
@@ -338,19 +343,21 @@ export default function RecordingView({
       </div>
 
       <div className="shrink-0 border-t border-separator p-4 flex items-center justify-between bg-window-background">
-        <button
+        <Button
+          variant="ghost"
+          size="md"
           onClick={startOver}
-          className="text-body text-label-secondary hover:text-label-primary"
         >
           Start over
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="primary"
+          size="lg"
           disabled={!canRun}
           onClick={run}
-          className="px-6 py-2 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-headline text-accent-label transition-colors"
         >
           {running || backendRunning ? "Running…" : anyFailed ? "Resume" : "Run"}
-        </button>
+        </Button>
       </div>
     </div>
   );
