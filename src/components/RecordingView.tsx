@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { save as saveDialog, open } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog, open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
@@ -182,14 +182,22 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   };
 
   const startOver = async () => {
-    if (!confirm("Start over — discard all progress for this recording?")) return;
+    const ok = await dialogConfirm(
+      "Start over — discard all progress for this recording?",
+      { title: "Start over", kind: "warning" },
+    );
+    if (!ok) return;
     await api.startOverRecording(recordingId);
     await reload();
     onRecordingChanged();
   };
 
   const deleteMe = async () => {
-    if (!confirm(`Delete recording '${rec.name}'?`)) return;
+    const ok = await dialogConfirm(
+      `Delete recording '${rec.name}'?`,
+      { title: "Delete recording", kind: "warning" },
+    );
+    if (!ok) return;
     await api.deleteRecording(recordingId);
     onRecordingDeleted();
   };
