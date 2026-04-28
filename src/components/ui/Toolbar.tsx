@@ -17,7 +17,7 @@ const Root = forwardRef<HTMLElement, RootProps>(function Toolbar(
       )}
       {...rest}
     >
-      <div className="contents">{children}</div>
+      {children}
     </section>
   );
 });

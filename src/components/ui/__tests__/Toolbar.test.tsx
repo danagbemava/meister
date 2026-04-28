@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { Toolbar } from "../Toolbar";
 
 describe("Toolbar", () => {
@@ -26,12 +26,15 @@ describe("Toolbar", () => {
   });
 
   it("Toolbar.Spacer renders a flex-1 div", () => {
-    const { container } = render(
+    render(
       <Toolbar>
+        <span data-testid="leading">L</span>
         <Toolbar.Spacer />
+        <span data-testid="trailing">T</span>
       </Toolbar>,
     );
-    const spacer = container.querySelector("div > div");
-    expect(spacer?.className).toMatch(/flex-1/);
+    const toolbar = screen.getByRole("toolbar");
+    const spacer = within(toolbar).getByTestId("leading").nextElementSibling as HTMLElement;
+    expect(spacer.className).toMatch(/flex-1/);
   });
 });
