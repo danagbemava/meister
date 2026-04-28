@@ -82,13 +82,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build()?;
 
     // Window
-    // Note: Tauri 2.10 PredefinedMenuItem has no `bring_all_to_front`; using
-    // minimize/maximize/fullscreen as the closest available equivalents.
+    // Note: Tauri 2.x PredefinedMenuItem has no `bring_all_to_front`; we drop
+    // it rather than substitute. Meister is single-window today so it isn't
+    // meaningful. Fullscreen would belong in View per macOS HIG, not Window;
+    // omitted from this slice.
     let window_submenu = SubmenuBuilder::new(app, "Window")
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::maximize(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
         .build()?;
 
     // Help (placeholder)

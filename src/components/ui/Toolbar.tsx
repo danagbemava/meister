@@ -1,16 +1,15 @@
 import { forwardRef } from "react";
 import { cn } from "../../lib/cn";
 
-type RootProps = React.HTMLAttributes<HTMLElement>;
+type RootProps = React.HTMLAttributes<HTMLDivElement>;
 
-const Root = forwardRef<HTMLElement, RootProps>(function Toolbar(
+const Root = forwardRef<HTMLDivElement, RootProps>(function Toolbar(
   { className, children, ...rest },
   ref,
 ) {
   return (
-    <section
+    <div
       ref={ref}
-      role="toolbar"
       className={cn(
         "flex h-11 items-center gap-2 px-4 border-b border-separator",
         className,
@@ -18,7 +17,7 @@ const Root = forwardRef<HTMLElement, RootProps>(function Toolbar(
       {...rest}
     >
       {children}
-    </section>
+    </div>
   );
 });
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import TemplateEditor from "./TemplateEditor";
 import SettingsForm from "./SettingsForm";
 import RecordingDropZone from "./RecordingDropZone";
@@ -115,7 +116,11 @@ export default function ProjectView({
   };
 
   const deleteProject = async () => {
-    if (!confirm(`Delete '${project?.name}' and its ${recordings.length} recordings? This cannot be undone.`)) return;
+    const ok = await dialogConfirm(
+      `Delete '${project?.name}' and its ${recordings.length} recordings? This cannot be undone.`,
+      { title: "Delete project", kind: "warning" },
+    );
+    if (!ok) return;
     await api.deleteProject(projectId);
     onProjectChanged();
   };

@@ -109,6 +109,7 @@ export default function App() {
   return (
     <div className="h-screen flex gap-2 p-2 overflow-hidden">
       <div
+        aria-hidden={!sidebarVisible}
         className={`transition-all duration-200 overflow-hidden shrink-0 ${
           sidebarVisible ? "w-60 opacity-100" : "w-0 opacity-0"
         }`}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { Toolbar } from "../Toolbar";
 
 describe("Toolbar", () => {
@@ -33,8 +33,7 @@ describe("Toolbar", () => {
         <span data-testid="trailing">T</span>
       </Toolbar>,
     );
-    const toolbar = screen.getByRole("toolbar");
-    const spacer = within(toolbar).getByTestId("leading").nextElementSibling as HTMLElement;
+    const spacer = screen.getByTestId("leading").nextElementSibling as HTMLElement;
     expect(spacer.className).toMatch(/flex-1/);
   });
 });

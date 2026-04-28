@@ -15,7 +15,7 @@ interface Props {
   projects: Project[];
   recordingsByProject: Record<string, Recording[]>;
   selection: Selection;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: Selection) => void | Promise<void>;
   onProjectsChanged: () => void;
   onPickFilesForProject: (projectId: string, paths: string[]) => void;
 }
