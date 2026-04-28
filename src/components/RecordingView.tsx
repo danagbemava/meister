@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import SettingsForm from "./SettingsForm";
-import { Button, Input } from "./ui";
+import { Button, Input, Toolbar } from "./ui";
 import { api } from "../api/storage";
 import {
   overallStatus,
@@ -196,45 +196,45 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   return (
     <div className="h-full flex flex-col">
+      <Toolbar data-tauri-drag-region>
+        {renamingRec ? (
+          <Input
+            autoFocus
+            size="sm"
+            className="font-semibold flex-1 mr-2"
+            value={draftRecName}
+            onChange={(e) => setDraftRecName(e.target.value)}
+            onBlur={async () => {
+              const name = draftRecName.trim() || rec.name;
+              setRenamingRec(false);
+              if (name !== rec.name) {
+                const next = { ...rec, name };
+                setRec(next);
+                await api.updateRecording(next);
+                onRecordingChanged();
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") { setDraftRecName(rec.name); setRenamingRec(false); }
+            }}
+          />
+        ) : (
+          <h1
+            onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
+            className="text-body font-semibold cursor-text hover:text-accent truncate"
+            title="Click to rename"
+          >
+            {rec.name}
+          </h1>
+        )}
+        <Toolbar.Spacer />
+        <span className="text-footnote text-label-tertiary">{overallStatus(rec)}</span>
+        <Button variant="ghost" size="sm" onClick={deleteMe} className="text-status-error">
+          Delete
+        </Button>
+      </Toolbar>
       <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          {renamingRec ? (
-            <Input
-              autoFocus
-              className="text-title-2 font-semibold flex-1 mr-4"
-              value={draftRecName}
-              onChange={(e) => setDraftRecName(e.target.value)}
-              onBlur={async () => {
-                const name = draftRecName.trim() || rec.name;
-                setRenamingRec(false);
-                if (name !== rec.name) {
-                  const next = { ...rec, name };
-                  setRec(next);
-                  await api.updateRecording(next);
-                  onRecordingChanged();
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                if (e.key === "Escape") { setDraftRecName(rec.name); setRenamingRec(false); }
-              }}
-            />
-          ) : (
-            <h1
-              onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
-              className="text-title-2 font-semibold cursor-text hover:text-accent"
-              title="Click to rename"
-            >
-              {rec.name}
-            </h1>
-          )}
-          <div className="flex items-center gap-2 text-footnote">
-            <span className="text-label-tertiary">{overallStatus(rec)}</span>
-            <Button variant="ghost" size="sm" onClick={deleteMe} className="text-status-error">
-              Delete
-            </Button>
-          </div>
-        </div>
         <div className="flex flex-col gap-1">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
