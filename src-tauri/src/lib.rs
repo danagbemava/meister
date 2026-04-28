@@ -5,6 +5,7 @@ pub mod transcription;
 pub mod storage;
 pub mod orchestrator;
 pub mod capture;
+pub mod menu;
 
 use tauri::{Emitter, Manager};
 
