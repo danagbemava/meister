@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { save as saveDialog, open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,6 +14,10 @@ import {
   type StageKind,
 } from "../types/storage";
 
+export interface RecordingViewHandle {
+  runPipeline: () => void;
+}
+
 interface Props {
   recordingId: string;
   onRecordingChanged: () => void;
@@ -22,11 +26,10 @@ interface Props {
 
 const STAGE_ORDER: StageKind[] = ["extract", "transcribe", "format", "save"];
 
-export default function RecordingView({
-  recordingId,
-  onRecordingChanged,
-  onRecordingDeleted,
-}: Props) {
+const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingView(
+  { recordingId, onRecordingChanged, onRecordingDeleted },
+  ref,
+) {
   const [rec, setRec] = useState<Recording | null>(null);
   const [running, setRunning] = useState(false);
   const [transcribePct, setTranscribePct] = useState(0);
@@ -104,6 +107,13 @@ export default function RecordingView({
     return () => { unlisten?.(); };
   }, [recordingId, reload]);
 
+  const runRef = useRef<() => void>(() => {});
+  useImperativeHandle(ref, () => ({
+    runPipeline: () => {
+      runRef.current();
+    },
+  }));
+
   if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>
@@ -139,6 +149,10 @@ export default function RecordingView({
       setRunning(false);
       onRecordingChanged();
     }
+  };
+
+  runRef.current = () => {
+    if (canRun) run();
   };
 
   const runSaveFlow = async (r: Recording) => {
@@ -361,7 +375,9 @@ export default function RecordingView({
       </div>
     </div>
   );
-}
+});
+
+export default RecordingView;
 
 // ── Output generators (copied verbatim from old App.tsx) ─────────────────────
 
