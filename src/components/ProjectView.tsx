@@ -7,7 +7,7 @@ import RecordCallCard from "./RecordCallCard";
 import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
-import { Button, Input } from "./ui";
+import { Button, Input, Toolbar } from "./ui";
 
 interface Props {
   projectId: string;
@@ -123,12 +123,13 @@ export default function ProjectView({
   if (!project) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   return (
-    <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8">
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col">
+      <Toolbar data-tauri-drag-region>
         {renaming ? (
           <Input
             autoFocus
-            className="text-title-2 font-semibold"
+            size="sm"
+            className="font-semibold"
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             onBlur={async () => {
@@ -144,12 +145,13 @@ export default function ProjectView({
         ) : (
           <h1
             onClick={() => setRenaming(true)}
-            className="text-title-2 font-semibold cursor-text hover:text-accent"
+            className="text-body font-semibold cursor-text hover:text-accent truncate"
             title="Click to rename"
           >
             {project.name}
           </h1>
         )}
+        <Toolbar.Spacer />
         <Button
           variant="ghost"
           size="sm"
@@ -158,8 +160,8 @@ export default function ProjectView({
         >
           Delete project
         </Button>
-      </div>
-
+      </Toolbar>
+      <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-8">
       <TemplateEditor
         template={project.template}
         onChange={(template) => save({ ...project, template })}
@@ -212,6 +214,7 @@ export default function ProjectView({
             </ul>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
