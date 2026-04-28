@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import type { Project, Recording } from "../types/storage";
 import { overallStatus } from "../types/storage";
 import { api } from "../api/storage";
 import type { Selection } from "../App";
 import { Button, Input, ContextMenu } from "./ui";
+
+export interface SidebarHandle {
+  beginNewProject: () => void;
+}
 
 interface Props {
   projects: Project[];
@@ -27,14 +32,17 @@ const DEFAULTS = {
   outputFormats: ["md"] as const,
 };
 
-export default function Sidebar({
-  projects,
-  recordingsByProject,
-  selection,
-  onSelect,
-  onProjectsChanged,
-  onPickFilesForProject,
-}: Props) {
+const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
+  {
+    projects,
+    recordingsByProject,
+    selection,
+    onSelect,
+    onProjectsChanged,
+    onPickFilesForProject,
+  },
+  ref,
+) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -45,6 +53,13 @@ export default function Sidebar({
     | null;
 
   const [renaming, setRenaming] = useState<RenameTarget>(null);
+
+  useImperativeHandle(ref, () => ({
+    beginNewProject: () => {
+      setCreating(true);
+      setNewName("");
+    },
+  }));
 
   const beginRenameProject = (p: Project) => {
     setRenaming({ kind: "project", id: p.id, value: p.name });
@@ -81,7 +96,11 @@ export default function Sidebar({
   };
 
   const deleteProject = async (p: Project) => {
-    if (!confirm(`Delete project "${p.name}" and all its recordings?`)) return;
+    const ok = await dialogConfirm(
+      `Delete project "${p.name}" and all its recordings?`,
+      { title: "Delete project", kind: "warning" },
+    );
+    if (!ok) return;
     await api.deleteProject(p.id);
     if (selection.kind === "project" && selection.projectId === p.id) {
       onSelect({ kind: "none" });
@@ -93,7 +112,11 @@ export default function Sidebar({
   };
 
   const deleteRecording = async (r: Recording) => {
-    if (!confirm(`Delete recording "${r.name}"?`)) return;
+    const ok = await dialogConfirm(`Delete recording "${r.name}"?`, {
+      title: "Delete recording",
+      kind: "warning",
+    });
+    if (!ok) return;
     await api.deleteRecording(r.id);
     if (selection.kind === "recording" && selection.recordingId === r.id) {
       onSelect({ kind: "none" });
@@ -333,7 +356,9 @@ export default function Sidebar({
       </div>
     </aside>
   );
-}
+});
+
+export default Sidebar;
 
 function StatusDot({ status }: { status: "new" | "in_progress" | "completed" | "failed" }) {
   const color =
