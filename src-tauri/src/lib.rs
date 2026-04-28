@@ -14,6 +14,13 @@ pub fn run() {
     use std::sync::Arc;
 
     tauri::Builder::default()
+        .menu(|handle| menu::build_menu(handle))
+        .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            if id.starts_with("menu:") {
+                let _ = app.emit(id, ());
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
