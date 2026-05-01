@@ -121,6 +121,9 @@ export default function App() {
           selection={selection}
           onSelect={guardedSelect}
           onProjectsChanged={refreshProjects}
+          onRecordingsChanged={(projectId) => {
+            void refreshRecordings(projectId);
+          }}
           onPickFilesForProject={(projectId, paths) => {
             void guardedSelect({ kind: "project", projectId });
             setPendingStagedPaths({ projectId, paths });

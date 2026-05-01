@@ -17,6 +17,7 @@ interface Props {
   selection: Selection;
   onSelect: (s: Selection) => void | Promise<void>;
   onProjectsChanged: () => void;
+  onRecordingsChanged: (projectId: string) => void;
   onPickFilesForProject: (projectId: string, paths: string[]) => void;
 }
 
@@ -39,6 +40,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     selection,
     onSelect,
     onProjectsChanged,
+    onRecordingsChanged,
     onPickFilesForProject,
   },
   ref,
@@ -89,7 +91,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
       const rec = all.find((r) => r.id === renaming.id);
       if (rec && trimmed !== rec.name) {
         await api.updateRecording({ ...rec, name: trimmed });
-        onProjectsChanged();
+        onRecordingsChanged(rec.projectId);
       }
     }
     setRenaming(null);
@@ -121,7 +123,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     if (selection.kind === "recording" && selection.recordingId === r.id) {
       onSelect({ kind: "none" });
     }
-    onProjectsChanged();
+    onRecordingsChanged(r.projectId);
   };
 
   const toggleExpand = (id: string) =>
