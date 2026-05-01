@@ -5,6 +5,7 @@ pub mod transcription;
 pub mod storage;
 pub mod orchestrator;
 pub mod capture;
+pub mod cancellation;
 pub mod menu;
 
 use tauri::{Emitter, Manager};
@@ -74,6 +75,7 @@ pub fn run() {
 
             app.manage(std::sync::Arc::new(store));
             app.manage(std::sync::Arc::new(capture::CallCaptureRegistry::new()));
+            app.manage(std::sync::Arc::new(cancellation::RecordingCancelRegistry::default()));
 
             accent::install_observer(app.handle().clone());
 
@@ -115,6 +117,7 @@ pub fn run() {
             commands::update_recording,
             commands::delete_recording,
             commands::start_over_recording,
+            commands::cancel_recording,
             commands::record_saved_outputs,
             commands::path_exists,
             commands::start_call_capture,

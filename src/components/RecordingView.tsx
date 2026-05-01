@@ -372,14 +372,30 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
         >
           Start over
         </Button>
-        <Button
-          variant="primary"
-          size="lg"
-          disabled={!canRun}
-          onClick={run}
-        >
-          {running || backendRunning ? "Running…" : anyFailed ? "Resume" : "Run"}
-        </Button>
+        {(running || backendRunning) ? (
+          <Button
+            variant="destructive"
+            size="lg"
+            onClick={async () => {
+              try {
+                await invoke("cancel_recording", { recordingId });
+              } catch (e) {
+                console.warn("cancel failed", e);
+              }
+            }}
+          >
+            Stop
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={!canRun}
+            onClick={run}
+          >
+            {anyFailed ? "Resume" : "Run"}
+          </Button>
+        )}
       </div>
     </div>
   );
