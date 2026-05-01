@@ -782,6 +782,23 @@ pub(crate) async fn run_format_core(
         let url = ollama_url.to_string();
         let model_s = model.to_string();
 
+        // With default Ollama (OLLAMA_NUM_PARALLEL=1), parallel requests queue
+        // at the server. Each queued request sits for ~T seconds where T is
+        // the per-chunk processing time; if T * (concurrency-1) exceeds the
+        // 120s watchdog, queued requests fail with "stopped responding".
+        //
+        // Heuristic: only attempt parallelism if every chunk is small enough
+        // that T * (concurrency-1) stays under the watchdog. We approximate T
+        // from chunk char count (rough: <2000 chars ≈ 30s on warm Gemma).
+        let avg_chunk_chars = chunks.iter().map(|c| c.len()).sum::<usize>() / chunks.len().max(1);
+        let concurrency = if chunks.len() == 1 {
+            1
+        } else if chunks.len() <= 3 && avg_chunk_chars < 2000 {
+            chunks.len()
+        } else {
+            1
+        };
+
         let results: Vec<Result<(usize, String), String>> = stream::iter(
             chunks.into_iter().enumerate()
         )
@@ -795,7 +812,7 @@ pub(crate) async fn run_format_core(
                 map_pass(&url, &model_s, &chunk_text, i, total, completed, chars_running, on_progress).await
             }
         })
-        .buffer_unordered(3)
+        .buffer_unordered(concurrency)
         .collect()
         .await;
 
