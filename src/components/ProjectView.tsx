@@ -14,6 +14,7 @@ interface Props {
   projectId: string;
   onProjectChanged: () => void;
   onRecordingCreated: (r: Recording) => void;
+  onSelectRecording: (recordingId: string) => void | Promise<void>;
   initialStagedPaths?: string[];
   onInitialStagedConsumed?: () => void;
   onCaptureActiveChange?: (discard: (() => void) | null) => void;
@@ -32,6 +33,7 @@ export default function ProjectView({
   projectId,
   onProjectChanged,
   onRecordingCreated,
+  onSelectRecording,
   initialStagedPaths,
   onInitialStagedConsumed,
   onCaptureActiveChange,
@@ -212,8 +214,14 @@ export default function ProjectView({
           {recordings.length > 0 && (
             <ul className="flex flex-col gap-1">
               {recordings.map((r) => (
-                <li key={r.id} className="text-body text-label-secondary px-3 py-1.5 bg-control-background rounded hover:bg-fill-tertiary">
-                  {r.name}
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => void onSelectRecording(r.id)}
+                    className="w-full text-left text-body text-label-secondary px-3 py-1.5 rounded hover:bg-fill-tertiary cursor-pointer"
+                  >
+                    {r.name}
+                  </button>
                 </li>
               ))}
             </ul>

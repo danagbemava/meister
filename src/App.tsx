@@ -139,6 +139,13 @@ export default function App() {
               refreshRecordings(r.projectId);
               setSelection({ kind: "recording", projectId: r.projectId, recordingId: r.id });
             }}
+            onSelectRecording={(recordingId) =>
+              guardedSelect({
+                kind: "recording",
+                projectId: selection.projectId,
+                recordingId,
+              })
+            }
             initialStagedPaths={
               pendingStagedPaths?.projectId === selection.projectId
                 ? pendingStagedPaths.paths
