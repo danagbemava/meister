@@ -666,6 +666,17 @@ async fn reduce_pass(
     on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync>,
 ) -> Result<String, String> {
     let prompt = build_prompt(stitched_notes, template);
+
+    // Emit an immediate Reduce-phase event so the UI flips from
+    // "Analyzing chunk N/N" to "Composing output…" while we wait for
+    // Ollama's first byte (cold model + large prompt can take 30s+).
+    on_progress(FormatProgress {
+        phase: FormatPhase::Reduce,
+        chunk: None,
+        chars: 0,
+        done: false,
+    });
+
     let emit = {
         let on_progress = on_progress.clone();
         move |p: FormatProgress| {
