@@ -10,9 +10,33 @@ pub mod menu;
 
 use tauri::{Emitter, Manager};
 
+/// When launched from Finder/Dock, a bundled .app inherits a minimal PATH
+/// that excludes the directories Homebrew uses for binaries (`/opt/homebrew/bin`
+/// on Apple Silicon, `/usr/local/bin` on Intel). Subprocess lookups for
+/// ffmpeg (and any future shell-outs) then fail with "command not found".
+/// Prepend the standard Homebrew prefixes so child processes can resolve them.
+#[cfg(target_os = "macos")]
+fn augment_path_for_homebrew() {
+    use std::env;
+    const EXTRA: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/local/sbin"];
+    let current = env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<&str> = current.split(':').filter(|p| !p.is_empty()).collect();
+    for p in EXTRA.iter().rev() {
+        if !parts.iter().any(|x| x == p) {
+            parts.insert(0, p);
+        }
+    }
+    env::set_var("PATH", parts.join(":"));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn augment_path_for_homebrew() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use std::sync::Arc;
+
+    augment_path_for_homebrew();
 
     tauri::Builder::default()
         .menu(|handle| menu::build_menu(handle))
