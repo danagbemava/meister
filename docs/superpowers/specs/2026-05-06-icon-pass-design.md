@@ -20,6 +20,7 @@ Per the native-feel status doc, this slice is "the single biggest 'this is a rea
 - Replacing the `bg-status-error animate-pulse` recording dot with a `record.circle` icon — the CSS dot already matches macOS recording indicators.
 - Hand-rolled SVG overrides for any icon (rejected during brainstorming — see "Source" below).
 - Icon-pass on screens not currently shipping emoji (TemplateEditor, OutputPreview have nothing to migrate today).
+- `SettingsForm.tsx:31-32` has `✓` characters embedded inside the string returned by `formatModelLabel()` — they render as inline body-text glyphs, not icon sites. Replacing them would require restructuring the label helper to return JSX, which is out of scope for this slice.
 
 ## Source
 
@@ -40,7 +41,7 @@ export type IconName =
   | "mic" | "waveform" | "doc-text" | "sparkles" | "equalizer" | "save"
   | "lock" | "warning"
   | "play" | "pause" | "stop" | "trash"
-  | "plus" | "x" | "pencil" | "chevron-right"
+  | "plus" | "x" | "check" | "pencil" | "chevron-right"
   | "folder" | "recording"
   | "gear" | "question" | "info"
   | "sidebar";
@@ -73,6 +74,7 @@ const REGISTRY: Record<IconName, React.ComponentType<P.IconProps>> = {
   trash: P.Trash,
   plus: P.Plus,
   x: P.X,
+  check: P.Check,
   pencil: P.Pencil,
   "chevron-right": P.CaretRight,
   folder: P.Folder,
@@ -138,7 +140,8 @@ Render rules:
 | `StageCard.tsx` format | `🤖` | `sparkles` | md | inherits | none |
 | `StageCard.tsx` save | `💾` | `save` | md | inherits | none |
 | `StagingList.tsx:88` close | `✕` text in `<button>` | `x` (icon-only Button or Icon in existing button) | sm | `text-label-tertiary hover:text-label-primary` | wrap as 24×24 circular hover-scrim hit area |
-| `Sidebar.tsx:218` rename-cancel | `✕` text | `x` | sm | same | same hit-area treatment |
+| `Sidebar.tsx:211` create-confirm | `✓` text | `check` | sm | inherits | none (already in a Button) |
+| `Sidebar.tsx:218` create-cancel | `✕` text | `x` | sm | same | none (already in a Button) |
 | `Sidebar.tsx` add-project `+` ghost button | text `+` | `plus` | sm | inherits | padding bump → ≥ 24px hit target |
 | Sidebar / recording-row hover chevron | (none) | `chevron-right` `opacity-0 group-hover:opacity-100` | sm | `text-label-tertiary` | subtle disclosure cue on hover (this is a *new* affordance, deliberate) |
 
@@ -155,7 +158,7 @@ Render rules:
   - Icon-only button (no children, only `iconLeft`) without `aria-label`: dev-mode `console.warn` fires once.
 - Migration validation (manual + grep at end):
   - `grep -rE '🎙|🔊|⚠|🔒|🎛|✍️|🤖|💾' src/ --include='*.tsx' --include='*.ts'` → 0 hits outside tests/specs.
-  - `grep -nE '"✕"|>\s*✕\s*<' src/ --include='*.tsx' --include='*.ts'` → 0 hits outside tests/specs.
+  - `grep -nE '>\s*✕\s*<|>\s*✓\s*<' src/ --include='*.tsx' --include='*.ts'` → 0 hits outside tests/specs and outside `SettingsForm.tsx`'s string helper (carved out above).
 
 ## File structure & sequencing
 
