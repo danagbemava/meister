@@ -84,6 +84,7 @@ impl Drop for SystemAudioHandle {
 struct AudioOutput {
     paused: Arc<AtomicBool>,
     writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
+    amplitude: Arc<super::amplitude::AmplitudeEmitter>,
 }
 
 impl SCStreamOutputTrait for AudioOutput {
@@ -116,8 +117,9 @@ impl SCStreamOutputTrait for AudioOutput {
 
         for buf in list.iter() {
             let bytes = buf.data();
-            // Each f32 sample is 4 bytes. Truncate any partial trailing bytes.
             let full = bytes.len() - (bytes.len() % 4);
+            let n = full / 4;
+            let mut frame: Vec<f32> = Vec::with_capacity(n);
             let mut i = 0;
             while i < full {
                 let s = f32::from_ne_bytes([
@@ -126,12 +128,14 @@ impl SCStreamOutputTrait for AudioOutput {
                     bytes[i + 2],
                     bytes[i + 3],
                 ]);
+                frame.push(s);
+                i += 4;
+            }
+            self.amplitude.push(super::amplitude::compute_rms(&frame));
+            for s in frame {
                 let clamped = s.clamp(-1.0, 1.0);
                 let v = (clamped * f32::from(i16::MAX)) as i16;
-                // Errors here are ignored; they'll surface at finalize() time
-                // if the writer is in an unrecoverable state.
                 let _ = writer.write_sample(v);
-                i += 4;
             }
         }
     }
@@ -144,6 +148,7 @@ impl SCStreamOutputTrait for AudioOutput {
 pub fn start_system_capture(
     wav_path: &Path,
     paused: Arc<AtomicBool>,
+    amplitude: Arc<super::amplitude::AmplitudeEmitter>,
 ) -> Result<Box<dyn std::any::Any + Send>, String> {
     // Enumerate shareable content. TCC denial surfaces here as a
     // NoShareableContent error from the Swift side.
@@ -187,6 +192,7 @@ pub fn start_system_capture(
     let output = AudioOutput {
         paused,
         writer: Arc::clone(&writer),
+        amplitude,
     };
 
     let mut stream = SCStream::new(&filter, &config);
