@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Input } from "./ui";
+import { Button, Icon, Input } from "./ui";
 
 interface Props {
   paths: string[];
@@ -78,15 +78,15 @@ export default function StagingList({
             <span className="flex-1 truncate text-label-primary" title={p}>
               {basename(p)}
             </span>
-            <Button
+            <button
+              type="button"
               onClick={() => onRemove(idx)}
-              variant="ghost"
-              size="sm"
-              className="hover:text-status-error"
+              aria-label="Remove from staging"
               title="Remove"
+              className="w-6 h-6 inline-flex items-center justify-center rounded-full text-label-tertiary hover:bg-fill-tertiary hover:text-status-error transition-colors"
             >
-              ✕
-            </Button>
+              <Icon name="x" size="sm" />
+            </button>
           </li>
         ))}
       </ul>
