@@ -34,7 +34,7 @@ export function useMicAmplitude(
     let ctx: AudioContext | null = null;
     let analyser: AnalyserNode | null = null;
     let rafId = 0;
-    let buf: Float32Array | null = null;
+    let buf: Float32Array<ArrayBuffer> | null = null;
     let lastPushAt = 0;
     let cancelled = false;
 
@@ -44,7 +44,8 @@ export function useMicAmplitude(
       analyser.fftSize = 1024;
       const src = ctx.createMediaStreamSource(stream);
       src.connect(analyser);
-      buf = new Float32Array(analyser.fftSize);
+      const arrayBuffer = new ArrayBuffer(analyser.fftSize * 4);
+      buf = new Float32Array(arrayBuffer);
       ringRef.current = new RingBuffer(RING_CAPACITY);
     } catch (e) {
       // Hook degrades to empty buffer; recording proceeds.
@@ -54,7 +55,7 @@ export function useMicAmplitude(
 
     const tick = () => {
       if (cancelled || !analyser || !buf || !ringRef.current) return;
-      analyser.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>);
+      analyser.getFloatTimeDomainData(buf);
       const now = performance.now();
       if (activeRef.current && now - lastPushAt >= MIN_INTERVAL_MS) {
         ringRef.current.push(computeRms(buf));

@@ -18,7 +18,13 @@ export default function RecordingWaveform({ samples, state, className }: Props) 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      ctx = canvas.getContext("2d");
+    } catch {
+      // jsdom doesn't support canvas; skip rendering.
+      return;
+    }
     if (!ctx) return;
 
     const { width, height } = canvas.getBoundingClientRect();
