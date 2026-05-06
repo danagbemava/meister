@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 pub fn start_mic_capture(
     wav_path: &Path,
     paused: Arc<AtomicBool>,
+    amplitude: Arc<super::amplitude::AmplitudeEmitter>,
 ) -> Result<Box<dyn std::any::Any + Send>, String> {
     let host = cpal::default_host();
     let device = host
@@ -33,6 +34,9 @@ pub fn start_mic_capture(
 
     let paused_cb = paused.clone();
     let writer_cb = writer.clone();
+    let amplitude_f32 = amplitude.clone();
+    let amplitude_i16 = amplitude.clone();
+    let amplitude_u16 = amplitude.clone();
 
     let err_fn = |err| eprintln!("mic cpal stream error: {err}");
 
@@ -41,6 +45,7 @@ pub fn start_mic_capture(
             &config,
             move |data: &[f32], _| {
                 if paused_cb.load(Ordering::Relaxed) { return; }
+                amplitude_f32.push(super::amplitude::compute_rms(data));
                 let mut guard = writer_cb.lock().unwrap();
                 let Some(w) = guard.as_mut() else { return; };
                 write_resampled_f32(w, data, dev_channels, dev_rate);
@@ -52,9 +57,11 @@ pub fn start_mic_capture(
             &config,
             move |data: &[i16], _| {
                 if paused_cb.load(Ordering::Relaxed) { return; }
+                let f32s: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                amplitude_i16.push(super::amplitude::compute_rms(&f32s));
                 let mut guard = writer_cb.lock().unwrap();
                 let Some(w) = guard.as_mut() else { return; };
-                write_resampled_i16(w, data, dev_channels, dev_rate);
+                write_resampled_f32(w, &f32s, dev_channels, dev_rate);
             },
             err_fn,
             None,
@@ -63,10 +70,12 @@ pub fn start_mic_capture(
             &config,
             move |data: &[u16], _| {
                 if paused_cb.load(Ordering::Relaxed) { return; }
+                let i16s: Vec<i16> = data.iter().map(|&u| (u as i32 - 32_768) as i16).collect();
+                let f32s: Vec<f32> = i16s.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                amplitude_u16.push(super::amplitude::compute_rms(&f32s));
                 let mut guard = writer_cb.lock().unwrap();
                 let Some(w) = guard.as_mut() else { return; };
-                let i16s: Vec<i16> = data.iter().map(|&u| (u as i32 - 32_768) as i16).collect();
-                write_resampled_i16(w, &i16s, dev_channels, dev_rate);
+                write_resampled_f32(w, &f32s, dev_channels, dev_rate);
             },
             err_fn,
             None,
@@ -90,16 +99,6 @@ pub fn start_mic_capture(
         }
     }
     Ok(Box::new(Handle { _stream: stream, writer }))
-}
-
-fn write_resampled_i16<W: std::io::Write + std::io::Seek>(
-    writer: &mut WavWriter<W>,
-    data: &[i16],
-    src_channels: u16,
-    src_rate: u32,
-) {
-    let f32s: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
-    write_resampled_f32(writer, &f32s, src_channels, src_rate);
 }
 
 fn write_resampled_f32<W: std::io::Write + std::io::Seek>(
