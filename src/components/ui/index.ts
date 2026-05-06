@@ -7,3 +7,5 @@ export { Toggle } from "./Toggle";
 export { SegmentedControl } from "./SegmentedControl";
 export { ContextMenu } from "./ContextMenu";
 export { Toolbar } from "./Toolbar";
+export { Icon } from "./Icon";
+export type { IconName, IconSize } from "./Icon";
