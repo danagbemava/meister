@@ -56,20 +56,19 @@ export default function TemplateEditor({ template, onChange }: Props) {
         </Button>
       </div>
       <div
-        className={`relative rounded-xl border transition-colors
-          ${dragging ? "border-accent bg-accent/10" : "border-separator"}`}
+        className="relative"
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
       >
         {dragging && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-accent/10 z-10 pointer-events-none">
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-accent/10 border-2 border-accent z-10 pointer-events-none">
             <p className="text-accent font-medium">Drop template file here</p>
           </div>
         )}
         <Textarea
           ref={textRef}
-          className="h-48 bg-control-background rounded-xl p-4 font-mono scrollable"
+          className="h-48 p-4 font-mono scrollable"
           placeholder={"# Meeting Minutes\nDate: [DATE]\n..."}
           value={template.content}
           onChange={(e) =>

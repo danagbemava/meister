@@ -6,3 +6,4 @@ export { Checkbox } from "./Checkbox";
 export { Toggle } from "./Toggle";
 export { SegmentedControl } from "./SegmentedControl";
 export { ContextMenu } from "./ContextMenu";
+export { Toolbar } from "./Toolbar";

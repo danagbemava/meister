@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import TemplateEditor from "./TemplateEditor";
 import SettingsForm from "./SettingsForm";
 import RecordingDropZone from "./RecordingDropZone";
@@ -7,12 +8,13 @@ import RecordCallCard from "./RecordCallCard";
 import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
-import { Button, Input } from "./ui";
+import { Button, Input, Toolbar } from "./ui";
 
 interface Props {
   projectId: string;
   onProjectChanged: () => void;
   onRecordingCreated: (r: Recording) => void;
+  onSelectRecording: (recordingId: string) => void | Promise<void>;
   initialStagedPaths?: string[];
   onInitialStagedConsumed?: () => void;
   onCaptureActiveChange?: (discard: (() => void) | null) => void;
@@ -31,6 +33,7 @@ export default function ProjectView({
   projectId,
   onProjectChanged,
   onRecordingCreated,
+  onSelectRecording,
   initialStagedPaths,
   onInitialStagedConsumed,
   onCaptureActiveChange,
@@ -115,7 +118,11 @@ export default function ProjectView({
   };
 
   const deleteProject = async () => {
-    if (!confirm(`Delete '${project?.name}' and its ${recordings.length} recordings? This cannot be undone.`)) return;
+    const ok = await dialogConfirm(
+      `Delete '${project?.name}' and its ${recordings.length} recordings? This cannot be undone.`,
+      { title: "Delete project", kind: "warning" },
+    );
+    if (!ok) return;
     await api.deleteProject(projectId);
     onProjectChanged();
   };
@@ -123,12 +130,13 @@ export default function ProjectView({
   if (!project) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   return (
-    <div className="h-full overflow-y-auto scrollable p-8 flex flex-col gap-8">
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col">
+      <Toolbar data-tauri-drag-region>
         {renaming ? (
           <Input
             autoFocus
-            className="text-title-2 font-semibold"
+            size="sm"
+            className="font-semibold"
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             onBlur={async () => {
@@ -144,12 +152,13 @@ export default function ProjectView({
         ) : (
           <h1
             onClick={() => setRenaming(true)}
-            className="text-title-2 font-semibold cursor-text hover:text-accent"
+            className="text-body font-semibold cursor-text hover:text-accent truncate"
             title="Click to rename"
           >
             {project.name}
           </h1>
         )}
+        <Toolbar.Spacer />
         <Button
           variant="ghost"
           size="sm"
@@ -158,8 +167,8 @@ export default function ProjectView({
         >
           Delete project
         </Button>
-      </div>
-
+      </Toolbar>
+      <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-8">
       <TemplateEditor
         template={project.template}
         onChange={(template) => save({ ...project, template })}
@@ -205,13 +214,20 @@ export default function ProjectView({
           {recordings.length > 0 && (
             <ul className="flex flex-col gap-1">
               {recordings.map((r) => (
-                <li key={r.id} className="text-body text-label-secondary px-3 py-1.5 bg-control-background rounded hover:bg-fill-tertiary">
-                  {r.name}
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => void onSelectRecording(r.id)}
+                    className="w-full text-left text-body text-label-secondary px-3 py-1.5 rounded hover:bg-fill-tertiary cursor-pointer"
+                  >
+                    {r.name}
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

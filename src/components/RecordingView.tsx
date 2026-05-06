@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { save as saveDialog, open } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog, open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import SettingsForm from "./SettingsForm";
-import { Button, Input } from "./ui";
+import { Button, Input, Toolbar } from "./ui";
 import { api } from "../api/storage";
 import {
   overallStatus,
@@ -13,6 +13,10 @@ import {
   type StageRecord,
   type StageKind,
 } from "../types/storage";
+
+export interface RecordingViewHandle {
+  runPipeline: () => void;
+}
 
 interface Props {
   recordingId: string;
@@ -22,11 +26,10 @@ interface Props {
 
 const STAGE_ORDER: StageKind[] = ["extract", "transcribe", "format", "save"];
 
-export default function RecordingView({
-  recordingId,
-  onRecordingChanged,
-  onRecordingDeleted,
-}: Props) {
+const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingView(
+  { recordingId, onRecordingChanged, onRecordingDeleted },
+  ref,
+) {
   const [rec, setRec] = useState<Recording | null>(null);
   const [running, setRunning] = useState(false);
   const [transcribePct, setTranscribePct] = useState(0);
@@ -104,6 +107,13 @@ export default function RecordingView({
     return () => { unlisten?.(); };
   }, [recordingId, reload]);
 
+  const runRef = useRef<() => void>(() => {});
+  useImperativeHandle(ref, () => ({
+    runPipeline: () => {
+      runRef.current();
+    },
+  }));
+
   if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>
@@ -141,6 +151,10 @@ export default function RecordingView({
     }
   };
 
+  runRef.current = () => {
+    if (canRun) run();
+  };
+
   const runSaveFlow = async (r: Recording) => {
     const formatted = r.stages.find((s) => s.stage === "format")?.output ?? "";
     const paths: string[] = [];
@@ -168,59 +182,67 @@ export default function RecordingView({
   };
 
   const startOver = async () => {
-    if (!confirm("Start over — discard all progress for this recording?")) return;
+    const ok = await dialogConfirm(
+      "Start over — discard all progress for this recording?",
+      { title: "Start over", kind: "warning" },
+    );
+    if (!ok) return;
     await api.startOverRecording(recordingId);
     await reload();
     onRecordingChanged();
   };
 
   const deleteMe = async () => {
-    if (!confirm(`Delete recording '${rec.name}'?`)) return;
+    const ok = await dialogConfirm(
+      `Delete recording '${rec.name}'?`,
+      { title: "Delete recording", kind: "warning" },
+    );
+    if (!ok) return;
     await api.deleteRecording(recordingId);
     onRecordingDeleted();
   };
 
   return (
     <div className="h-full flex flex-col">
+      <Toolbar data-tauri-drag-region>
+        {renamingRec ? (
+          <Input
+            autoFocus
+            size="sm"
+            className="font-semibold flex-1 mr-2"
+            value={draftRecName}
+            onChange={(e) => setDraftRecName(e.target.value)}
+            onBlur={async () => {
+              const name = draftRecName.trim() || rec.name;
+              setRenamingRec(false);
+              if (name !== rec.name) {
+                const next = { ...rec, name };
+                setRec(next);
+                await api.updateRecording(next);
+                onRecordingChanged();
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") { setDraftRecName(rec.name); setRenamingRec(false); }
+            }}
+          />
+        ) : (
+          <h1
+            onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
+            className="text-body font-semibold cursor-text hover:text-accent truncate"
+            title="Click to rename"
+          >
+            {rec.name}
+          </h1>
+        )}
+        <Toolbar.Spacer />
+        <span className="text-footnote text-label-tertiary">{overallStatus(rec)}</span>
+        <Button variant="ghost" size="sm" onClick={deleteMe} className="text-status-error">
+          Delete
+        </Button>
+      </Toolbar>
       <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          {renamingRec ? (
-            <Input
-              autoFocus
-              className="text-title-2 font-semibold flex-1 mr-4"
-              value={draftRecName}
-              onChange={(e) => setDraftRecName(e.target.value)}
-              onBlur={async () => {
-                const name = draftRecName.trim() || rec.name;
-                setRenamingRec(false);
-                if (name !== rec.name) {
-                  const next = { ...rec, name };
-                  setRec(next);
-                  await api.updateRecording(next);
-                  onRecordingChanged();
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                if (e.key === "Escape") { setDraftRecName(rec.name); setRenamingRec(false); }
-              }}
-            />
-          ) : (
-            <h1
-              onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
-              className="text-title-2 font-semibold cursor-text hover:text-accent"
-              title="Click to rename"
-            >
-              {rec.name}
-            </h1>
-          )}
-          <div className="flex items-center gap-2 text-footnote">
-            <span className="text-label-tertiary">{overallStatus(rec)}</span>
-            <Button variant="ghost" size="sm" onClick={deleteMe} className="text-status-error">
-              Delete
-            </Button>
-          </div>
-        </div>
         <div className="flex flex-col gap-1">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
@@ -350,18 +372,36 @@ export default function RecordingView({
         >
           Start over
         </Button>
-        <Button
-          variant="primary"
-          size="lg"
-          disabled={!canRun}
-          onClick={run}
-        >
-          {running || backendRunning ? "Running…" : anyFailed ? "Resume" : "Run"}
-        </Button>
+        {(running || backendRunning) ? (
+          <Button
+            variant="destructive"
+            size="lg"
+            onClick={async () => {
+              try {
+                await invoke("cancel_recording", { recordingId });
+              } catch (e) {
+                console.warn("cancel failed", e);
+              }
+            }}
+          >
+            Stop
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={!canRun}
+            onClick={run}
+          >
+            {anyFailed ? "Resume" : "Run"}
+          </Button>
+        )}
       </div>
     </div>
   );
-}
+});
+
+export default RecordingView;
 
 // ── Output generators (copied verbatim from old App.tsx) ─────────────────────
 

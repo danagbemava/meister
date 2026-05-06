@@ -109,8 +109,9 @@ fn saved_path_matches_any_format(
 }
 
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
+use crate::cancellation::RecordingCancelRegistry;
 use crate::commands::{run_extract, run_format, run_transcribe};
 use crate::storage::{self, Recording, Store};
 
@@ -164,6 +165,11 @@ pub async fn run_recording(
         .collect();
     let wavs_exist = !wav_paths.is_empty() && wav_paths.iter().all(|p| p.is_file());
 
+    // Per-recording cancel token. Replaces any stale token from a previous
+    // run so this run starts un-cancelled.
+    let registry: tauri::State<Arc<RecordingCancelRegistry>> = app.state();
+    let cancel = registry.token_for_new_run(&recording_id);
+
     // Walk stages; on invalidation, reset downstream before starting.
     // We reload the recording's stages after each transition to avoid stale in-memory copies.
     for stage_kind in StageKind::ALL {
@@ -202,6 +208,18 @@ pub async fn run_recording(
             stage: stage_kind.as_str().to_string(),
             status: "running".to_string(),
         });
+
+        if cancel.is_cancelled() {
+            storage::stages::set_failed(&store, &recording_id, stage_kind, "cancelled")
+                .map_err(|e| format!("set_failed: {e}"))?;
+            let _ = app.emit("stage-changed", StageChangedEvent {
+                recording_id: recording_id.clone(),
+                stage: stage_kind.as_str().to_string(),
+                status: "failed".to_string(),
+            });
+            registry.finish(&recording_id);
+            return Err("cancelled".into());
+        }
 
         let result = match stage_kind {
             StageKind::Extract => {
@@ -260,6 +278,7 @@ pub async fn run_recording(
                     &project.template.content,
                     &rec.settings.ollama_url,
                     &rec.settings.model,
+                    Some(cancel.clone()),
                 )
                 .await?;
                 Ok(storage::stages::CompletedOutput {
@@ -303,11 +322,13 @@ pub async fn run_recording(
                     stage: stage_kind.as_str().to_string(),
                     status: "failed".to_string(),
                 });
+                registry.finish(&recording_id);
                 return Err(e);
             }
         }
     }
 
+    registry.finish(&recording_id);
     Ok(())
 }
 

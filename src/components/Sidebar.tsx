@@ -1,17 +1,23 @@
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import type { Project, Recording } from "../types/storage";
 import { overallStatus } from "../types/storage";
 import { api } from "../api/storage";
 import type { Selection } from "../App";
 import { Button, Input, ContextMenu } from "./ui";
 
+export interface SidebarHandle {
+  beginNewProject: () => void;
+}
+
 interface Props {
   projects: Project[];
   recordingsByProject: Record<string, Recording[]>;
   selection: Selection;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: Selection) => void | Promise<void>;
   onProjectsChanged: () => void;
+  onRecordingsChanged: (projectId: string) => void;
   onPickFilesForProject: (projectId: string, paths: string[]) => void;
 }
 
@@ -27,14 +33,18 @@ const DEFAULTS = {
   outputFormats: ["md"] as const,
 };
 
-export default function Sidebar({
-  projects,
-  recordingsByProject,
-  selection,
-  onSelect,
-  onProjectsChanged,
-  onPickFilesForProject,
-}: Props) {
+const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
+  {
+    projects,
+    recordingsByProject,
+    selection,
+    onSelect,
+    onProjectsChanged,
+    onRecordingsChanged,
+    onPickFilesForProject,
+  },
+  ref,
+) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -45,6 +55,13 @@ export default function Sidebar({
     | null;
 
   const [renaming, setRenaming] = useState<RenameTarget>(null);
+
+  useImperativeHandle(ref, () => ({
+    beginNewProject: () => {
+      setCreating(true);
+      setNewName("");
+    },
+  }));
 
   const beginRenameProject = (p: Project) => {
     setRenaming({ kind: "project", id: p.id, value: p.name });
@@ -74,14 +91,18 @@ export default function Sidebar({
       const rec = all.find((r) => r.id === renaming.id);
       if (rec && trimmed !== rec.name) {
         await api.updateRecording({ ...rec, name: trimmed });
-        onProjectsChanged();
+        onRecordingsChanged(rec.projectId);
       }
     }
     setRenaming(null);
   };
 
   const deleteProject = async (p: Project) => {
-    if (!confirm(`Delete project "${p.name}" and all its recordings?`)) return;
+    const ok = await dialogConfirm(
+      `Delete project "${p.name}" and all its recordings?`,
+      { title: "Delete project", kind: "warning" },
+    );
+    if (!ok) return;
     await api.deleteProject(p.id);
     if (selection.kind === "project" && selection.projectId === p.id) {
       onSelect({ kind: "none" });
@@ -93,12 +114,16 @@ export default function Sidebar({
   };
 
   const deleteRecording = async (r: Recording) => {
-    if (!confirm(`Delete recording "${r.name}"?`)) return;
+    const ok = await dialogConfirm(`Delete recording "${r.name}"?`, {
+      title: "Delete recording",
+      kind: "warning",
+    });
+    if (!ok) return;
     await api.deleteRecording(r.id);
     if (selection.kind === "recording" && selection.recordingId === r.id) {
       onSelect({ kind: "none" });
     }
-    onProjectsChanged();
+    onRecordingsChanged(r.projectId);
   };
 
   const toggleExpand = (id: string) =>
@@ -145,18 +170,27 @@ export default function Sidebar({
   return (
     <aside className="w-60 shrink-0 rounded-xl bg-sidebar-background flex flex-col">
       <div data-tauri-drag-region className="h-9 shrink-0" />
-      <div className="p-3 border-b border-separator">
-        {!creating ? (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => setCreating(true)}
-            className="w-full"
-          >
-            + New project
-          </Button>
-        ) : (
-          <div className="flex gap-2">
+
+      <div className="flex-1 overflow-y-auto scrollable px-2 pb-1">
+        <div className="flex items-center justify-between pl-2 pr-0.5 pt-1 pb-0.5">
+          <span className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider">
+            Projects
+          </span>
+          {!creating && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCreating(true)}
+              className="text-label-tertiary hover:text-label-primary px-1.5"
+              aria-label="New project"
+            >
+              +
+            </Button>
+          )}
+        </div>
+
+        {creating && (
+          <div className="flex gap-1 px-1 pb-2 pt-1">
             <Input
               autoFocus
               size="sm"
@@ -185,9 +219,7 @@ export default function Sidebar({
             </Button>
           </div>
         )}
-      </div>
 
-      <div className="flex-1 overflow-y-auto scrollable p-1">
         {projects.length === 0 && (
           <p className="text-footnote text-label-tertiary p-3">No projects yet.</p>
         )}
@@ -203,7 +235,7 @@ export default function Sidebar({
                       onSelect({ kind: "project", projectId: p.id });
                       toggleExpand(p.id);
                     }}
-                    className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-body cursor-pointer group
+                    className={`w-full text-left px-1.5 py-1.5 rounded-md flex items-center gap-1 text-body cursor-pointer group
                       ${projectSelected(p.id)
                         ? "bg-accent/10 text-accent"
                         : "hover:bg-fill-tertiary text-label-primary"}`}
@@ -278,7 +310,7 @@ export default function Sidebar({
                           });
                         }
                       }}
-                      className={`w-full text-left pl-7 pr-2 py-1 rounded flex items-center gap-2 text-body cursor-pointer
+                      className={`w-full text-left pl-6 pr-1.5 py-1 rounded-md flex items-center gap-1.5 text-body cursor-pointer
                         ${recordingSelected(r.id)
                           ? "bg-accent/10 text-accent"
                           : "hover:bg-fill-tertiary text-label-secondary"}`}
@@ -333,7 +365,9 @@ export default function Sidebar({
       </div>
     </aside>
   );
-}
+});
+
+export default Sidebar;
 
 function StatusDot({ status }: { status: "new" | "in_progress" | "completed" | "failed" }) {
   const color =
