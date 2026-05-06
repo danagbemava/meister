@@ -1271,8 +1271,9 @@ pub async fn start_call_capture(
         .app_data_dir()
         .map_err(|e| format!("app_data_dir: {e}"))?;
     let registry = (*registry).clone();
+    let app_for_session = app.clone();
     tokio::task::spawn_blocking(move || {
-        capture::begin_session(&registry, &app_data_dir, include_mic)
+        capture::begin_session(&registry, &app_data_dir, include_mic, app_for_session)
     })
     .await
     .map_err(|e| format!("join: {e}"))?

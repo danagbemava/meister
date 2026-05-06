@@ -27,6 +27,9 @@ pub struct CallCaptureSession {
     pub mic_handle: Option<Box<dyn std::any::Any + Send>>,
     pub sample_rate: u32,
     pub channels: u16,
+    /// Kept alive for the lifetime of the session; dropped here stops the
+    /// 30 fps drain task. Audio callbacks each hold their own `Arc` clone.
+    pub _amplitude: Arc<amplitude::AmplitudeEmitter>,
 }
 
 #[derive(Default)]
@@ -89,6 +92,7 @@ pub fn begin_session(
     registry: &CallCaptureRegistry,
     app_data_dir: &std::path::Path,
     include_mic: bool,
+    app: tauri::AppHandle,
 ) -> Result<StartCallCaptureResult, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let dir = session_temp_dir(app_data_dir, &id);
@@ -99,8 +103,18 @@ pub fn begin_session(
 
     let paused = Arc::new(AtomicBool::new(false));
 
+    let session_id_for_emit = id.clone();
+    let app_for_emit = app.clone();
+    let amplitude = Arc::new(amplitude::AmplitudeEmitter::spawn(move |rms| {
+        use tauri::Emitter;
+        let _ = app_for_emit.emit(
+            "call-capture-amplitude",
+            serde_json::json!({ "sessionId": session_id_for_emit, "rms": rms }),
+        );
+    }));
+
     // System audio first — if permission isn't granted, we bail.
-    let system_handle = match system_audio::start_system_capture(&system_wav, paused.clone()) {
+    let system_handle = match system_audio::start_system_capture(&system_wav, paused.clone(), amplitude.clone()) {
         Ok(h) => h,
         Err(e) if e == "not-authorized" => {
             let _ = std::fs::remove_dir_all(&dir);
@@ -119,7 +133,7 @@ pub fn begin_session(
 
     // Mic is best-effort when requested.
     let (mic_handle, mic_path, mic_ok, mic_error) = if include_mic {
-        match mic_audio::start_mic_capture(&mic_wav, paused.clone()) {
+        match mic_audio::start_mic_capture(&mic_wav, paused.clone(), amplitude.clone()) {
             Ok(h) => (Some(h), Some(mic_wav.clone()), true, None),
             Err(e) => (None, None, false, Some(e)),
         }
@@ -137,6 +151,7 @@ pub fn begin_session(
         mic_handle,
         sample_rate: system_audio::SAMPLE_RATE,
         channels: system_audio::CHANNELS,
+        _amplitude: amplitude,
     };
 
     registry.sessions.lock().unwrap().insert(id.clone(), session);
