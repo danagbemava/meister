@@ -181,11 +181,10 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
               variant="ghost"
               size="sm"
               onClick={() => setCreating(true)}
-              className="text-label-tertiary hover:text-label-primary px-1.5"
+              className="text-label-tertiary hover:text-label-primary"
+              iconLeft="plus"
               aria-label="New project"
-            >
-              +
-            </Button>
+            />
           )}
         </div>
 
@@ -207,16 +206,16 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
               variant="primary"
               size="sm"
               onClick={createProject}
-            >
-              ✓
-            </Button>
+              iconLeft="check"
+              aria-label="Create project"
+            />
             <Button
               variant="ghost"
               size="sm"
               onClick={() => { setCreating(false); setNewName(""); }}
-            >
-              ✕
-            </Button>
+              iconLeft="x"
+              aria-label="Cancel"
+            />
           </div>
         )}
 
