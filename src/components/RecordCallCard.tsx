@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/storage";
 import { Button, Checkbox } from "./ui";
+import RecordingWaveform from "./RecordingWaveform";
+import { useTauriAmplitude } from "../lib/useTauriAmplitude";
 
 type CaptureState =
   | "idle"
@@ -32,9 +34,12 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
   const [elapsedMs, setElapsedMs] = useState(0);
 
   const sessionRef = useRef<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const startedAtRef = useRef<number>(0);
   const accumulatedRef = useRef<number>(0);
   const tickerRef = useRef<number | null>(null);
+
+  const sysAmp = useTauriAmplitude(sessionId);
 
   const stopTicker = () => {
     if (tickerRef.current !== null) {
@@ -58,6 +63,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     const id = sessionRef.current;
     stopTicker();
     sessionRef.current = null;
+    setSessionId(null);
     onActiveChange?.(null);
     if (id) {
       try { await api.discardCallCapture(id); } catch { /* best-effort */ }
@@ -82,6 +88,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
         setMicError(result.micError ?? "Microphone unavailable — recording system audio only.");
       }
       sessionRef.current = result.sessionId;
+      setSessionId(result.sessionId);
       startedAtRef.current = Date.now();
       startTicker();
       setState("recording");
@@ -128,6 +135,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     try {
       const path = await api.stopCallCapture(id);
       sessionRef.current = null;
+      setSessionId(null);
       onActiveChange?.(null);
       setElapsedMs(0);
       accumulatedRef.current = 0;
@@ -203,26 +211,51 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
   }
 
   if (state === "recording" || state === "paused") {
-    const dotColor = state === "recording" ? "bg-status-error animate-pulse" : "bg-status-warning";
-    const badge = includeMic ? "System + Mic" : "System only";
     return (
-      <div className={`${cardBase} border-solid border-accent/40 bg-accent/10`}>
-        <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
-          <span className="text-2xl font-mono tabular-nums">{formatElapsed(elapsedMs)}</span>
+      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-control-background`}>
+        <div className="w-full flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              state === "recording"
+                ? "bg-status-error animate-pulse"
+                : "bg-status-warning"
+            }`}
+          />
+          <span className="text-callout font-mono tabular-nums text-label-secondary">
+            {formatElapsed(elapsedMs)}
+          </span>
+          {state === "paused" && (
+            <span className="text-footnote text-label-tertiary ml-2">Paused</span>
+          )}
         </div>
-        <p className="text-footnote text-label-secondary">{badge}</p>
+
+        <RecordingWaveform
+          samples={sysAmp.samples}
+          state={state === "recording" ? "recording" : "paused"}
+          className="h-16"
+        />
+
         {micError && (
-          <p className="text-footnote text-status-warning text-center px-2">{micError}</p>
+          <p className="text-footnote text-status-warning">{micError}</p>
         )}
-        <div className="flex gap-2 mt-2">
+
+        <div className="w-full flex items-center gap-2">
           {state === "recording" ? (
-            <Button onClick={pause} variant="secondary" size="md">⏸ Pause</Button>
+            <Button onClick={pause} variant="secondary" size="md" aria-label="Pause">⏸</Button>
           ) : (
             <Button onClick={resume} variant="primary" size="md">▶ Resume</Button>
           )}
-          <Button onClick={stop} variant="primary" size="md">⏹ Stop</Button>
-          <Button onClick={discard} variant="ghost" size="md" className="hover:bg-status-error/20">✕ Discard</Button>
+          <Button onClick={stop} variant={state === "paused" ? "secondary" : "primary"} size="md">
+            ◼ Stop
+          </Button>
+          <Button
+            onClick={discard}
+            variant="ghost"
+            size="md"
+            className="ml-auto hover:bg-status-error/20"
+          >
+            Discard
+          </Button>
         </div>
       </div>
     );
