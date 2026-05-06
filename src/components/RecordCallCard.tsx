@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/storage";
-import { Button, Checkbox } from "./ui";
+import { Button, Checkbox, Icon } from "./ui";
 import RecordingWaveform from "./RecordingWaveform";
 import { useTauriAmplitude } from "../lib/useTauriAmplitude";
 
@@ -171,7 +171,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
         className={`${cardBase} border-dashed border-separator hover:border-separator bg-control-background cursor-pointer`}
         onClick={start}
       >
-        <span className="text-3xl opacity-30">🔊</span>
+        <Icon name="waveform" size="lg" className="text-label-tertiary" />
         <p className="text-body text-label-secondary">Record call</p>
         <label
           className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none"
@@ -191,7 +191,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
   if (state === "permission-needed") {
     return (
       <div className={`${cardBase} border-solid border-status-warning/40 bg-status-warning/10`}>
-        <span className="text-3xl opacity-60">🔒</span>
+        <Icon name="lock" size="lg" className="text-status-warning/80" />
         <p className="text-body text-status-warning text-center px-2">
           Screen Recording permission required.
         </p>
@@ -241,17 +241,18 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
         <div className="w-full flex items-center gap-2">
           {state === "recording" ? (
-            <Button onClick={pause} variant="secondary" size="md" aria-label="Pause">⏸</Button>
+            <Button onClick={pause} variant="secondary" size="md" iconLeft="pause" aria-label="Pause" />
           ) : (
-            <Button onClick={resume} variant="primary" size="md">▶ Resume</Button>
+            <Button onClick={resume} variant="primary" size="md" iconLeft="play">Resume</Button>
           )}
-          <Button onClick={stop} variant={state === "paused" ? "secondary" : "primary"} size="md">
-            ◼ Stop
+          <Button onClick={stop} variant={state === "paused" ? "secondary" : "primary"} size="md" iconLeft="stop">
+            Stop
           </Button>
           <Button
             onClick={discard}
             variant="ghost"
             size="md"
+            iconLeft="trash"
             className="ml-auto hover:bg-status-error/20"
           >
             Discard
@@ -272,7 +273,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
   return (
     <div className={`${cardBase} border-solid border-status-error/30 bg-status-error/10`}>
-      <span className="text-3xl opacity-50">⚠</span>
+      <Icon name="warning" size="lg" className="text-status-error/70" />
       <p className="text-body text-status-error text-center px-2">{errorMsg}</p>
       <Button onClick={retry} variant="secondary" size="md" className="mt-2">Retry</Button>
     </div>
