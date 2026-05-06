@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
+pub mod amplitude;
 pub mod cleanup;
 pub mod mic_audio;
 pub mod mix;
