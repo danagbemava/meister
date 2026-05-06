@@ -1,4 +1,5 @@
 import type { StageKind, StageStatus } from "../types/storage";
+import { Icon, type IconName } from "./ui";
 
 interface Props {
   kind: StageKind;
@@ -15,11 +16,11 @@ const LABELS: Record<StageKind, string> = {
   save: "Save outputs",
 };
 
-const ICONS: Record<StageKind, string> = {
-  extract: "🎛",
-  transcribe: "✍️",
-  format: "🤖",
-  save: "💾",
+const ICONS: Record<StageKind, IconName> = {
+  extract: "equalizer",
+  transcribe: "doc-text",
+  format: "sparkles",
+  save: "save",
 };
 
 export default function StageCard({ kind, status, error, subtitle, progress }: Props) {
@@ -38,7 +39,7 @@ export default function StageCard({ kind, status, error, subtitle, progress }: P
   return (
     <div className={`rounded-xl border p-4 flex flex-col gap-2 ${tone}`}>
       <div className="flex items-center gap-3">
-        <span className="text-xl">{ICONS[kind]}</span>
+        <Icon name={ICONS[kind]} size="md" className="text-label-secondary" />
         <div className="flex-1">
           <div className="text-body font-medium">{LABELS[kind]}</div>
           {subtitle && <div className="text-footnote text-label-secondary">{subtitle}</div>}
