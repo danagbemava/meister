@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "./ui";
+import RecordingWaveform from "./RecordingWaveform";
+import { useMicAmplitude } from "../lib/useMicAmplitude";
 
 type CaptureState = "idle" | "recording" | "paused" | "saving" | "error";
 
@@ -35,6 +37,9 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
   const [state, setState] = useState<CaptureState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+
+  const micAmp = useMicAmplitude(stream, state === "recording");
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -63,6 +68,7 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
     recorderRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    setStream(null);
   };
 
   useEffect(() => {
@@ -88,12 +94,13 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
     accumulatedRef.current = 0;
     chunksRef.current = [];
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = mediaStream;
+      setStream(mediaStream);
       const mime = pickMime();
       const recorder = mime
-        ? new MediaRecorder(stream, { mimeType: mime })
-        : new MediaRecorder(stream);
+        ? new MediaRecorder(mediaStream, { mimeType: mime })
+        : new MediaRecorder(mediaStream);
       recorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -105,6 +112,7 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
         const wasDiscarded = (recorder as MediaRecorder & { _discarded?: boolean })._discarded === true;
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+        setStream(null);
         recorderRef.current = null;
         onActiveChange?.(null);
 
@@ -196,21 +204,47 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
   }
 
   if (state === "recording" || state === "paused") {
-    const dotColor = state === "recording" ? "bg-status-error animate-pulse" : "bg-status-warning";
     return (
-      <div className={`${cardBase} border-solid border-accent/40 bg-accent/10`}>
-        <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
-          <span className="text-2xl font-mono tabular-nums">{formatElapsed(elapsedMs)}</span>
+      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-control-background`}>
+        <div className="w-full flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              state === "recording"
+                ? "bg-status-error animate-pulse"
+                : "bg-status-warning"
+            }`}
+          />
+          <span className="text-callout font-mono tabular-nums text-label-secondary">
+            {formatElapsed(elapsedMs)}
+          </span>
+          {state === "paused" && (
+            <span className="text-footnote text-label-tertiary ml-2">Paused</span>
+          )}
         </div>
-        <div className="flex gap-2 mt-2">
+
+        <RecordingWaveform
+          samples={micAmp.samples}
+          state={state === "recording" ? "recording" : "paused"}
+          className="h-16"
+        />
+
+        <div className="w-full flex items-center gap-2">
           {state === "recording" ? (
-            <Button onClick={pause} variant="secondary" size="md">⏸ Pause</Button>
+            <Button onClick={pause} variant="secondary" size="md" aria-label="Pause">⏸</Button>
           ) : (
             <Button onClick={resume} variant="primary" size="md">▶ Resume</Button>
           )}
-          <Button onClick={stop} variant="primary" size="md">⏹ Stop</Button>
-          <Button onClick={discard} variant="ghost" size="md" className="hover:bg-status-error/20">✕ Discard</Button>
+          <Button onClick={stop} variant={state === "paused" ? "secondary" : "primary"} size="md">
+            ◼ Stop
+          </Button>
+          <Button
+            onClick={discard}
+            variant="ghost"
+            size="md"
+            className="ml-auto hover:bg-status-error/20"
+          >
+            Discard
+          </Button>
         </div>
       </div>
     );
