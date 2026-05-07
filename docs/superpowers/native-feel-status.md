@@ -12,10 +12,10 @@ The overhaul was decomposed into 6 sub-projects, with #3 and #4 each split into 
 | #2 Window vibrancy + Music-style islands | shipped | `native-feel/02-vibrancy-complete` (untagged; merged) |
 | #3a Control library — foundations | shipped | `native-feel/03a-controls-foundations-complete` (untagged; merged) |
 | #3b Control library — composite | shipped | `native-feel/03b-controls-composite-complete` (untagged; merged) |
-| #4a Chrome basics | branch `native-feel/04a-chrome` (this worktree) | not yet merged |
+| #4a Chrome basics | shipped | merged into `main` 2026-05-06 |
 | #4b Notifications + Help/About | not started | |
 | #4c Preferences + Undo | not started | |
-| #5 SF Symbols + icon pass | not started | |
+| #5 SF Symbols + icon pass | shipped | direct to `main` 2026-05-07 |
 | #6 Component redesign | not started | |
 
 ## What shipped (per slice)
@@ -96,15 +96,24 @@ These patterns recur across slices and should inform future work:
 - **Title sizes in Toolbar** shrunk from `text-title-2` to `text-body` to fit the 44px height. A 48px Toolbar with `text-callout` titles would be more breathing room — revisit if it feels cramped.
 - **`OutputPreview` empty pre block** when transcript exists but format failed — already partly fixed (auto-select populated tab + disable empty one). If both missing, component returns null.
 
+### #5 — SF Symbols + icon pass
+- `<Icon name="…" size="…" />` primitive in `src/components/ui/Icon.tsx` backed by Phosphor (`@phosphor-icons/react@2.x`, MIT). Typed `IconName` union resolves through a const registry to a Phosphor component.
+- Three sizes mirror SF Symbols' optical scaling: `sm` = 14px bold, `md` = 20px regular, `lg` = 32px light. Color flows through `currentColor` so consumers tint via `text-*` Tailwind classes.
+- Decorative-by-default (`aria-hidden`); becomes a labeled `role="img"` when `aria-label` is provided.
+- `<Button>` extended with `iconLeft`/`iconRight` props plus an icon-only mode (auto-square shape, dev-mode `console.warn` if `aria-label` is missing). Used by all transport buttons across both record cards.
+- Migrated every emoji site: `RecordCard` (mic, transport, warning), `RecordCallCard` (waveform, lock, transport, warning), `StageCard` (equalizer/doc-text/sparkles/save), `StagingList` (close-x as 24×24 circular hover-scrim), `Sidebar` (plus/check/x — all icon-only Buttons).
+- Bundle audit confirmed Phosphor tree-shakes per icon — exactly 23 icon names land in `dist/`, no leakage. Per-icon SSR imports unnecessary.
+- Forward-looking icons registered (`gear`, `question`, `info`, `sidebar`, `folder`, `recording`, `pencil`) so #4b/#4c/#6 don't have to touch `Icon.tsx`.
+- 31 new frontend tests (Icon + Button extension); total 103 frontend tests passing.
+
 ## What's next
 
 - **#4b — Notifications + Help/About.** Native notifications when long-running steps (Format, Save) complete. Help menu populated. About dialog with app version + GitHub link.
 - **#4c — Preferences + Undo.** Global Preferences pane (⌘,) with default-inheritance for new projects. Undo/Redo plumbing for inline rename (replaces or coexists with the predefined Edit menu items currently routing to WebKit).
-- **#5 — SF Symbols + icon pass.** Replace emoji status dots, document icons, etc. with SF Symbols rendered via SVG (or a font approach). Add icons to `Button` variants. This is the single biggest "this is a real Mac app" payoff still pending.
-- **#6 — Component redesign pass.** Full visual polish: Source-List-style sidebar (NSOutlineView treatment), card-on-island elevation distinction, modal scrim semantics, light-mode tuning, etc.
+- **#6 — Component redesign pass.** Full visual polish: Source-List-style sidebar (NSOutlineView treatment), card-on-island elevation distinction, modal scrim semantics, light-mode tuning, hover-disclosure chevron on rows (deferred from #5), etc.
 
 ## References
 
-- Specs: `docs/superpowers/specs/2026-04-{24,25,27,28}-*.md`
-- Plans: `docs/superpowers/plans/2026-04-{24,25,27,28}-*.md`
+- Specs: `docs/superpowers/specs/2026-04-{24,25,27,28}-*.md`, `docs/superpowers/specs/2026-05-06-icon-pass-design.md`
+- Plans: `docs/superpowers/plans/2026-04-{24,25,27,28}-*.md`, `docs/superpowers/plans/2026-05-06-icon-pass.md`
 - Brainstorming notes live in the conversation transcripts; specs are authoritative.
