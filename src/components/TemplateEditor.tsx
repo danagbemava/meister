@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Template } from "../types/storage";
-import { Button, Textarea } from "./ui";
+import { Button, Checkbox, Textarea } from "./ui";
 
 interface Props {
   template: Template;
@@ -72,10 +72,30 @@ export default function TemplateEditor({ template, onChange }: Props) {
           placeholder={"# Meeting Minutes\nDate: [DATE]\n..."}
           value={template.content}
           onChange={(e) =>
-            onChange({ source: "inline", content: e.target.value, sourcePath: null })
+            onChange({
+              source: "inline",
+              content: e.target.value,
+              sourcePath: null,
+              matchStyle: template.matchStyle,
+            })
           }
           spellCheck={false}
         />
+      </div>
+      <div className="mt-1">
+        <label className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none">
+          <Checkbox
+            size="sm"
+            checked={template.matchStyle ?? false}
+            onCheckedChange={(c) =>
+              onChange({ ...template, matchStyle: Boolean(c) })
+            }
+          />
+          Match writing style of this template
+        </label>
+        <p className="text-footnote text-label-tertiary ml-6">
+          When enabled, the LLM also mirrors the template's tone and voice in the output.
+        </p>
       </div>
       {template.sourcePath && (
         <p className="text-footnote text-label-tertiary truncate">
