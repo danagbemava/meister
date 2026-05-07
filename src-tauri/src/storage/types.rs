@@ -39,6 +39,8 @@ pub struct Template {
     pub content: String,
     #[serde(rename = "sourcePath")]
     pub source_path: Option<String>,
+    #[serde(rename = "matchStyle", default, skip_serializing_if = "is_false")]
+    pub match_style: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +54,8 @@ pub struct Project {
     pub template: Template,
     #[serde(rename = "defaultSettings")]
     pub default_settings: AppSettings,
+    #[serde(rename = "customInstructions", default, skip_serializing_if = "String::is_empty")]
+    pub custom_instructions: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -135,6 +139,10 @@ pub struct StageRecord {
     pub output: Option<String>,
     #[serde(rename = "savedPaths")]
     pub saved_paths: Option<Vec<String>>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
