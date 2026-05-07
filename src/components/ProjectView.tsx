@@ -8,7 +8,7 @@ import RecordCallCard from "./RecordCallCard";
 import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
-import { Button, Input, Toolbar } from "./ui";
+import { Button, Input, Textarea, Toolbar } from "./ui";
 
 interface Props {
   projectId: string;
@@ -173,6 +173,21 @@ export default function ProjectView({
         template={project.template}
         onChange={(template) => save({ ...project, template })}
       />
+
+      <div className="flex flex-col gap-2">
+        <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
+          Additional Instructions
+        </label>
+        <Textarea
+          className="h-24 p-3 scrollable"
+          placeholder="e.g., Use British English. Keep under 500 words. Skip empty sections."
+          value={project.customInstructions ?? ""}
+          onChange={(e) =>
+            save({ ...project, customInstructions: e.target.value })
+          }
+          spellCheck
+        />
+      </div>
 
       <div>
         <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider mb-3">
