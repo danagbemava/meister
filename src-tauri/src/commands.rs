@@ -430,14 +430,25 @@ fn prepend_overlap(existing: &[String], body: &str) -> String {
     format!("{tail}\n\n{}", body.trim_start())
 }
 
-/// SHA-256 over `transcript || 0x00 || template || 0x00 || model` → hex.
-pub(crate) fn cache_key(transcript: &str, template: &str, model: &str) -> String {
+/// SHA-256 over `transcript || 0x00 || template || 0x00 || model || 0x00 ||
+/// match_style_byte || 0x00 || custom_instructions` → hex.
+pub(crate) fn cache_key(
+    transcript: &str,
+    template: &str,
+    model: &str,
+    match_style: bool,
+    custom_instructions: &str,
+) -> String {
     let mut h = Sha256::new();
     h.update(transcript.as_bytes());
     h.update([0u8]);
     h.update(template.as_bytes());
     h.update([0u8]);
     h.update(model.as_bytes());
+    h.update([0u8]);
+    h.update([if match_style { 1u8 } else { 0u8 }]);
+    h.update([0u8]);
+    h.update(custom_instructions.as_bytes());
     let digest = h.finalize();
     let mut out = String::with_capacity(64);
     for b in digest.iter() {
@@ -1577,18 +1588,20 @@ mod tests {
 
     #[test]
     fn cache_key_is_stable_for_same_inputs() {
-        let a = cache_key("transcript", "template", "gemma3");
-        let b = cache_key("transcript", "template", "gemma3");
+        let a = cache_key("transcript", "template", "gemma3", false, "");
+        let b = cache_key("transcript", "template", "gemma3", false, "");
         assert_eq!(a, b);
         assert_eq!(a.len(), 64, "sha256 hex should be 64 chars");
     }
 
     #[test]
     fn cache_key_differs_on_any_input_change() {
-        let base = cache_key("t", "tpl", "m");
-        assert_ne!(base, cache_key("t2", "tpl", "m"));
-        assert_ne!(base, cache_key("t", "tpl2", "m"));
-        assert_ne!(base, cache_key("t", "tpl", "m2"));
+        let base = cache_key("t", "tpl", "m", false, "");
+        assert_ne!(base, cache_key("t2", "tpl", "m", false, ""));
+        assert_ne!(base, cache_key("t", "tpl2", "m", false, ""));
+        assert_ne!(base, cache_key("t", "tpl", "m2", false, ""));
+        assert_ne!(base, cache_key("t", "tpl", "m", true, ""));
+        assert_ne!(base, cache_key("t", "tpl", "m", false, "extra"));
     }
 
     #[test]
