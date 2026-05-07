@@ -682,10 +682,12 @@ async fn reduce_pass(
     model: &str,
     stitched_notes: &str,
     template: &str,
+    match_style: bool,
+    custom_instructions: &str,
     on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync>,
     cancel: Option<crate::cancellation::CancelToken>,
 ) -> Result<String, String> {
-    let prompt = build_prompt(stitched_notes, template);
+    let prompt = build_prompt(stitched_notes, template, match_style, custom_instructions);
 
     // Emit an immediate Reduce-phase event so the UI flips from
     // "Analyzing chunk N/N" to "Composing output…" while we wait for
@@ -757,6 +759,8 @@ pub(crate) async fn run_format_core(
     template: &str,
     ollama_url: &str,
     model: &str,
+    match_style: bool,
+    custom_instructions: &str,
     cache_dir: &Path,
     on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync>,
     cancel: Option<crate::cancellation::CancelToken>,
@@ -764,7 +768,7 @@ pub(crate) async fn run_format_core(
     use futures_util::{stream, StreamExt};
     use std::sync::atomic::AtomicUsize;
 
-    let key = cache_key(transcript, template, model);
+    let key = cache_key(transcript, template, model, match_style, custom_instructions);
     if let Some(hit) = cache_read(cache_dir, &key) {
         on_progress(FormatProgress {
             phase: FormatPhase::Single,
@@ -778,7 +782,7 @@ pub(crate) async fn run_format_core(
     let cleaned = preprocess(transcript);
 
     let final_output = if approx_tokens(&cleaned) < THRESHOLD {
-        let prompt = build_prompt(&cleaned, template);
+        let prompt = build_prompt(&cleaned, template, match_style, custom_instructions);
         let single_cb = {
             let on_progress = on_progress.clone();
             move |p: FormatProgress| on_progress(p)
@@ -847,7 +851,7 @@ pub(crate) async fn run_format_core(
         notes.sort_by_key(|(i, _)| *i);
 
         let stitched = stitch_notes(&notes);
-        let reduced = reduce_pass(ollama_url, model, &stitched, template, on_progress.clone(), cancel.clone()).await?;
+        let reduced = reduce_pass(ollama_url, model, &stitched, template, match_style, custom_instructions, on_progress.clone(), cancel.clone()).await?;
 
         on_progress(FormatProgress {
             phase: FormatPhase::Reduce,
@@ -874,6 +878,8 @@ pub async fn run_format(
     template_content: &str,
     ollama_url: &str,
     model: &str,
+    match_style: bool,
+    custom_instructions: &str,
     cancel: Option<crate::cancellation::CancelToken>,
 ) -> Result<String, String> {
     let cache_dir = app
@@ -892,6 +898,8 @@ pub async fn run_format(
         template_content,
         ollama_url,
         model,
+        match_style,
+        custom_instructions,
         &cache_dir,
         on_progress,
         cancel,
@@ -1153,6 +1161,7 @@ pub async fn create_project(
             updated_at: now,
             template,
             default_settings,
+            custom_instructions: String::new(),
         };
         storage::projects::insert(&store, &p)?;
         Ok::<Project, String>(p)
@@ -1757,6 +1766,8 @@ mod tests {
             "# Template",
             &mock.base_url,
             "gemma3",
+            false,
+            "",
             tmp.path(),
             noop_progress(),
             None,
@@ -1796,6 +1807,8 @@ mod tests {
             "# Template",
             &mock.base_url,
             "gemma3",
+            false,
+            "",
             tmp.path(),
             noop_progress(),
             None,
@@ -1820,8 +1833,8 @@ mod tests {
         let mock = MockOllama::spawn(|_b| "FORMATTED".to_string()).await;
         let tmp = tempfile::tempdir().unwrap();
 
-        run_format_core("t", "tpl", &mock.base_url, "gemma3", tmp.path(), noop_progress(), None).await.unwrap();
-        run_format_core("t", "tpl", &mock.base_url, "gemma3", tmp.path(), noop_progress(), None).await.unwrap();
+        run_format_core("t", "tpl", &mock.base_url, "gemma3", false, "", tmp.path(), noop_progress(), None).await.unwrap();
+        run_format_core("t", "tpl", &mock.base_url, "gemma3", false, "", tmp.path(), noop_progress(), None).await.unwrap();
 
         let calls = mock.calls.lock().unwrap();
         assert_eq!(calls.len(), 1, "second run should have hit the cache");
@@ -1832,8 +1845,8 @@ mod tests {
         let mock = MockOllama::spawn(|_b| "FORMATTED".to_string()).await;
         let tmp = tempfile::tempdir().unwrap();
 
-        run_format_core("t", "tpl", &mock.base_url, "modelA", tmp.path(), noop_progress(), None).await.unwrap();
-        run_format_core("t", "tpl", &mock.base_url, "modelB", tmp.path(), noop_progress(), None).await.unwrap();
+        run_format_core("t", "tpl", &mock.base_url, "modelA", false, "", tmp.path(), noop_progress(), None).await.unwrap();
+        run_format_core("t", "tpl", &mock.base_url, "modelB", false, "", tmp.path(), noop_progress(), None).await.unwrap();
 
         let calls = mock.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
@@ -1856,7 +1869,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let (events, cb) = collect_progress();
 
-        run_format_core(&transcript, "# Template", &mock.base_url, "gemma3", tmp.path(), cb, None)
+        run_format_core(&transcript, "# Template", &mock.base_url, "gemma3", false, "", tmp.path(), cb, None)
             .await
             .unwrap();
 

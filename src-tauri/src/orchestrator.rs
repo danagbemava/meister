@@ -278,6 +278,8 @@ pub async fn run_recording(
                     &project.template.content,
                     &rec.settings.ollama_url,
                     &rec.settings.model,
+                    project.template.match_style,
+                    &project.custom_instructions,
                     Some(cancel.clone()),
                 )
                 .await?;

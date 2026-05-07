@@ -26,8 +26,10 @@ fn sample_project() -> Project {
             source: TemplateSource::Inline,
             content: "# Minutes\n".to_string(),
             source_path: None,
+            match_style: false,
         },
         default_settings: default_settings(),
+        custom_instructions: String::new(),
     }
 }
 
@@ -329,7 +331,7 @@ fn migrates_v1_to_v2_wraps_source_path_into_array() {
     let v: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 2);
+    assert_eq!(v, 3);
 
     // source_paths is a JSON array with the old path.
     let sp: String = conn
