@@ -47,9 +47,19 @@ fn load_context(models_dir: &std::path::Path, size: ModelSize) -> Result<Arc<Whi
     if !bin.is_file() {
         return Err(format!("model file missing: {}", bin.display()));
     }
+    // Disable Metal for the decoder: whisper.cpp's encoder runs on the Apple
+    // Neural Engine via CoreML (auto-discovered from the sibling `.mlmodelc`
+    // directory), which is a separate accelerator from the GPU. The decoder
+    // path, when `use_gpu = true`, runs on Metal — and Metal is shared with
+    // WindowServer, so on Apple Silicon any heavy Metal load (whisper decoder
+    // here, Ollama during format) makes the macOS compositor stutter
+    // system-wide. Routing the decoder to CPU keeps the GPU free for the
+    // compositor; the encoder is the expensive part and stays on ANE.
+    let mut params = WhisperContextParameters::default();
+    params.use_gpu = false;
     let ctx = WhisperContext::new_with_params(
         bin.to_str().ok_or("non-utf8 model path")?,
-        WhisperContextParameters::default(),
+        params,
     ).map_err(|e| format!("load whisper model: {e}"))?;
     let arc = Arc::new(ctx);
     g.insert(size.as_str().to_string(), arc.clone());
