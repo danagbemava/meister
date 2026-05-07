@@ -38,7 +38,7 @@ Per the native-feel status doc, this slice is "the single biggest 'this is a rea
 import * as P from "@phosphor-icons/react";
 
 export type IconName =
-  | "mic" | "waveform" | "doc-text" | "sparkles" | "equalizer" | "save"
+  | "mic" | "waveform" | "doc-text" | "media" | "sparkles" | "equalizer" | "save"
   | "lock" | "warning"
   | "play" | "pause" | "stop" | "trash"
   | "plus" | "x" | "check" | "pencil" | "chevron-right"
@@ -63,6 +63,7 @@ const REGISTRY: Record<IconName, React.ComponentType<P.IconProps>> = {
   mic: P.Microphone,
   waveform: P.WaveformCircle,
   "doc-text": P.FileText,
+  media: P.FilmStrip,
   sparkles: P.Sparkle,
   equalizer: P.Equalizer,
   save: P.FloppyDisk,
@@ -143,7 +144,8 @@ Render rules:
 | `Sidebar.tsx:211` create-confirm | `✓` text | `check` | sm | inherits | none (already in a Button) |
 | `Sidebar.tsx:218` create-cancel | `✕` text | `x` | sm | same | none (already in a Button) |
 | `Sidebar.tsx` add-project `+` ghost button | text `+` | `plus` | sm | inherits | padding bump → ≥ 24px hit target |
-| Sidebar / recording-row hover chevron | (none) | `chevron-right` `opacity-0 group-hover:opacity-100` | sm | `text-label-tertiary` | subtle disclosure cue on hover (this is a *new* affordance, deliberate) |
+| `RecordingDropZone.tsx` hero | `🎬 text-3xl opacity-30` | `media` (FilmStrip) | lg | `text-label-tertiary` | drop in (added during implementation; not in original sweep) |
+| Sidebar / recording-row hover chevron | (none) | `chevron-right` `opacity-0 group-hover:opacity-100` | sm | `text-label-tertiary` | subtle disclosure cue on hover (this is a *new* affordance, deliberate; deferred to #6) |
 
 ## Testing
 
