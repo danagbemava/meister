@@ -889,28 +889,70 @@ pub async fn run_format(
 }
 
 
-fn build_prompt(transcript: &str, template: &str) -> String {
+fn build_prompt(
+    transcript: &str,
+    template: &str,
+    match_style: bool,
+    custom_instructions: &str,
+) -> String {
+    let instructions_trimmed = custom_instructions.trim();
+
+    // Build the numbered job steps in order. Steps with optional clauses
+    // get appended conditionally so step numbers stay contiguous.
+    let mut steps: Vec<String> = vec![
+        "Carefully read the entire transcript.".into(),
+        "Identify and extract all key information: participants, topics discussed, decisions made, action items, dates, and any other relevant details.".into(),
+        "Produce a clean, well-structured document that strictly follows the layout of the FORMAT TEMPLATE below.".into(),
+    ];
+    if match_style {
+        steps.push(
+            "Match the writing style of the FORMAT TEMPLATE. Mirror its tone (formal/casual), sentence rhythm, vocabulary, and any voice quirks (first-person/third-person, verbosity, jargon level). Apply this style to all prose in your output, while still drawing factual content only from the transcript.".into(),
+        );
+    }
+    steps.push(
+        "Do not invent information not present in the transcript. If a section has no content, write \"N/A\" or omit it gracefully.".into(),
+    );
+    steps.push(
+        "Output only the final formatted document — no preamble, no explanation.".into(),
+    );
+    if !instructions_trimmed.is_empty() {
+        steps.push(
+            "Follow the ADDITIONAL INSTRUCTIONS strictly. They override defaults where they conflict (e.g., length, voice, locale). Do not introduce facts not present in the transcript.".into(),
+        );
+    }
+    let numbered_steps = steps
+        .iter()
+        .enumerate()
+        .map(|(i, s)| format!("{}. {}", i + 1, s))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let instructions_block = if instructions_trimmed.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n---\nADDITIONAL INSTRUCTIONS:\n{instructions_trimmed}\n",
+        )
+    };
+
     format!(
         r#"You are an expert document formatter. You will be given a raw meeting/recording transcript and a format template.
 
 Your job:
-1. Carefully read the entire transcript.
-2. Identify and extract all key information: participants, topics discussed, decisions made, action items, dates, and any other relevant details.
-3. Produce a clean, well-structured document that strictly follows the layout and style of the FORMAT TEMPLATE below.
-4. Do not invent information not present in the transcript. If a section has no content, write "N/A" or omit it gracefully.
-5. Output only the final formatted document — no preamble, no explanation.
+{numbered_steps}
 
 ---
 FORMAT TEMPLATE:
 {template}
----
-
+---{instructions_block}
 RAW TRANSCRIPT:
 {transcript}
 ---
 
 Produce the formatted document now:"#,
+        numbered_steps = numbered_steps,
         template = template,
+        instructions_block = instructions_block,
         transcript = transcript,
     )
 }
@@ -1825,6 +1867,55 @@ mod tests {
         let last = events.last().unwrap();
         assert!(last.done);
         assert_eq!(last.phase, FormatPhase::Reduce);
+    }
+
+    #[test]
+    fn build_prompt_omits_style_clause_when_flag_off() {
+        let p = build_prompt("transcript", "tpl", false, "");
+        assert!(!p.contains("Match the writing style"), "should not include style clause");
+    }
+
+    #[test]
+    fn build_prompt_includes_style_clause_when_flag_on() {
+        let p = build_prompt("transcript", "tpl", true, "");
+        assert!(
+            p.contains("Match the writing style of the FORMAT TEMPLATE"),
+            "missing style clause:\n{p}"
+        );
+    }
+
+    #[test]
+    fn build_prompt_omits_instructions_section_when_empty() {
+        let p = build_prompt("transcript", "tpl", false, "");
+        assert!(!p.contains("ADDITIONAL INSTRUCTIONS"), "should not include instructions block");
+    }
+
+    #[test]
+    fn build_prompt_strips_whitespace_only_instructions() {
+        let p = build_prompt("transcript", "tpl", false, "   \n  \t");
+        assert!(!p.contains("ADDITIONAL INSTRUCTIONS"), "whitespace-only must be treated as empty");
+    }
+
+    #[test]
+    fn build_prompt_includes_instructions_section_when_set() {
+        let p = build_prompt("transcript", "tpl", false, "Use British English.");
+        assert!(p.contains("ADDITIONAL INSTRUCTIONS:"), "missing instructions header");
+        assert!(p.contains("Use British English."), "missing instructions body");
+        assert!(
+            p.contains("Follow the ADDITIONAL INSTRUCTIONS strictly"),
+            "missing instructions step"
+        );
+    }
+
+    #[test]
+    fn build_prompt_base_uses_layout_only_phrasing() {
+        // The base prompt should say "follow the layout" (singular), not "layout and style".
+        let p = build_prompt("t", "tpl", false, "");
+        assert!(p.contains("strictly follows the layout of the FORMAT TEMPLATE"), "base phrasing");
+        assert!(
+            !p.contains("layout and style of the FORMAT TEMPLATE"),
+            "old conflated phrasing must be removed"
+        );
     }
 }
 
