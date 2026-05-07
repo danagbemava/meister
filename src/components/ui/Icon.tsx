@@ -2,6 +2,7 @@ import {
   Microphone,
   Waves,
   FileText,
+  FilmStrip,
   Sparkle,
   Equalizer,
   FloppyDisk,
@@ -27,7 +28,7 @@ import {
 } from "@phosphor-icons/react";
 
 export type IconName =
-  | "mic" | "waveform" | "doc-text" | "sparkles" | "equalizer" | "save"
+  | "mic" | "waveform" | "doc-text" | "media" | "sparkles" | "equalizer" | "save"
   | "lock" | "warning"
   | "play" | "pause" | "stop" | "trash"
   | "plus" | "x" | "check" | "pencil" | "chevron-right"
@@ -41,6 +42,7 @@ const REGISTRY: Record<IconName, React.ComponentType<PhosphorIconProps>> = {
   mic: Microphone,
   waveform: Waves,
   "doc-text": FileText,
+  media: FilmStrip,
   sparkles: Sparkle,
   equalizer: Equalizer,
   save: FloppyDisk,

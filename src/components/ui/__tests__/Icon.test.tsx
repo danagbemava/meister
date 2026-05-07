@@ -3,7 +3,7 @@ import { render } from "@testing-library/react";
 import { Icon, type IconName } from "../Icon";
 
 const ALL_NAMES: IconName[] = [
-  "mic", "waveform", "doc-text", "sparkles", "equalizer", "save",
+  "mic", "waveform", "doc-text", "media", "sparkles", "equalizer", "save",
   "lock", "warning",
   "play", "pause", "stop", "trash",
   "plus", "x", "check", "pencil", "chevron-right",

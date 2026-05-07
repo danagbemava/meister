@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Icon } from "./ui";
 
 interface Props {
   onPicked: (filePaths: string[]) => void;
@@ -51,7 +52,7 @@ export default function RecordingDropZone({ onPicked }: Props) {
       onDrop={handleDrop}
       onClick={openFile}
     >
-      <span className="text-3xl opacity-30">🎬</span>
+      <Icon name="media" size="lg" className="text-label-tertiary" />
       <p className="text-body text-label-secondary text-center px-4">
         Drop one or more files here, or click to browse
       </p>
