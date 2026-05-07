@@ -3,7 +3,7 @@
 
 use rusqlite::Connection;
 
-const CURRENT_VERSION: i32 = 2;
+const CURRENT_VERSION: i32 = 3;
 
 pub fn migrate(conn: &Connection) -> Result<(), String> {
     let mut version: i32 = conn
@@ -14,6 +14,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         match version {
             0 => migrate_v0_to_v1(conn)?,
             1 => migrate_v1_to_v2(conn)?,
+            2 => migrate_v2_to_v3(conn)?,
             n => return Err(format!("no migration from version {n}")),
         }
         version += 1;
@@ -74,4 +75,14 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<(), String> {
         "#,
     )
     .map_err(|e| format!("apply v2 schema: {e}"))
+}
+
+fn migrate_v2_to_v3(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        r#"
+        ALTER TABLE projects ADD COLUMN template_match_style INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE projects ADD COLUMN custom_instructions TEXT NOT NULL DEFAULT '';
+        "#,
+    )
+    .map_err(|e| format!("apply v3 schema: {e}"))
 }
