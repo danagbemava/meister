@@ -14,6 +14,7 @@ export interface Template {
   source: TemplateSource;
   content: string;
   sourcePath?: string | null;
+  matchStyle?: boolean;
 }
 
 export interface Project {
@@ -23,6 +24,7 @@ export interface Project {
   updatedAt: number;
   template: Template;
   defaultSettings: AppSettings;
+  customInstructions?: string;
 }
 
 export type StageKind = "extract" | "transcribe" | "format" | "save";
