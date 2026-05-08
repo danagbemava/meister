@@ -534,16 +534,24 @@ async fn ollama_generate_stream(
     let mut buf = String::new();
     let mut accumulated = String::new();
     loop {
-        if let Some(c) = cancel {
-            if c.is_cancelled() {
-                return Err("cancelled".into());
+        // Race the next-chunk read against cancellation. Polling-only checks
+        // could miss a `cancel()` that fires while parked inside `stream.next()`,
+        // which on a cold model load can be 30–60 s before the first byte.
+        let cancel_fut = async {
+            match cancel {
+                Some(c) => c.cancelled().await,
+                None => std::future::pending::<()>().await,
             }
-        }
-        let next = tokio::time::timeout(
+        };
+        let next_fut = tokio::time::timeout(
             std::time::Duration::from_secs(INACTIVITY_TIMEOUT_SECS),
             stream.next(),
-        )
-        .await;
+        );
+        let next = tokio::select! {
+            biased;
+            _ = cancel_fut => return Err("cancelled".into()),
+            r = next_fut => r,
+        };
         let chunk_bytes = match next {
             Ok(Some(c)) => c,
             Ok(None) => break,
