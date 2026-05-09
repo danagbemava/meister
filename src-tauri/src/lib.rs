@@ -8,6 +8,9 @@ pub mod capture;
 pub mod cancellation;
 pub mod menu;
 
+#[cfg(test)]
+mod test_support;
+
 use tauri::{Emitter, Manager};
 
 /// When launched from Finder/Dock, a bundled .app inherits a minimal PATH
