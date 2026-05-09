@@ -30,3 +30,6 @@ npm-debug.log*
 # Git worktrees
 .worktrees/
 .claude/
+
+# Superpowers brainstorming session files
+.superpowers/
