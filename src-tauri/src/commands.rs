@@ -336,6 +336,8 @@ pub(crate) const THRESHOLD_PUB: usize = THRESHOLD;
 pub(crate) fn approx_tokens_pub(s: &str) -> usize {
     approx_tokens(s)
 }
+pub(crate) fn split_into_chunks_pub(s: &str) -> Vec<String> { split_into_chunks(s) }
+pub(crate) fn preprocess_pub(s: &str) -> String { preprocess(s) }
 
 /// Advance `i` forward until it lands on a UTF-8 char boundary, then clamp to
 /// `s.len()`. Ensures byte-offset slices into `s` never split a codepoint.
