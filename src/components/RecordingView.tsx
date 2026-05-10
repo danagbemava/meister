@@ -4,8 +4,9 @@ import { save as saveDialog, open, confirm as dialogConfirm } from "@tauri-apps/
 import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
+import AskPanel from "./AskPanel";
 import SettingsForm from "./SettingsForm";
-import { Button, Input, Toolbar } from "./ui";
+import { Button, Icon, Input, Toolbar } from "./ui";
 import { api } from "../api/storage";
 import {
   overallStatus,
@@ -44,6 +45,10 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const [missingByPath, setMissingByPath] = useState<Record<string, boolean>>({});
   const [renamingRec, setRenamingRec] = useState(false);
   const [draftRecName, setDraftRecName] = useState("");
+  const [askOpen, setAskOpen] = useState(false);
+  const [highlightRange, setHighlightRange] = useState<
+    { start: number; end: number; nonce: number } | undefined
+  >(undefined);
 
   useEffect(() => {
     if (!rec) return;
@@ -113,6 +118,22 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
       runRef.current();
     },
   }));
+
+  const hasTranscript =
+    rec?.stages.find((s) => s.stage === "transcribe")?.status === "completed" &&
+    (rec?.stages.find((s) => s.stage === "transcribe")?.output?.length ?? 0) > 0;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key.toLowerCase() === "k") {
+        if (!hasTranscript) return;
+        e.preventDefault();
+        setAskOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasTranscript]);
 
   if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
@@ -327,11 +348,26 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           </div>
         </details>
 
-        <OutputPreview
-          transcript={transcript}
-          formatted={formatted}
-          savedPaths={savedPaths}
-        />
+        <div className={askOpen ? "flex gap-4" : ""}>
+          <div className="flex-1">
+            <OutputPreview
+              transcript={transcript}
+              formatted={formatted}
+              savedPaths={savedPaths}
+              highlightRange={highlightRange}
+            />
+          </div>
+          {askOpen && rec && (
+            <AskPanel
+              recordingId={rec.id}
+              disabled={!hasTranscript}
+              onCitationClick={(c) => {
+                if (c.start === null || c.end === null) return;
+                setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
+              }}
+            />
+          )}
+        </div>
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
           <div className="text-footnote text-label-tertiary space-y-1">
@@ -365,13 +401,24 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
       </div>
 
       <div className="shrink-0 border-t border-separator p-4 flex items-center justify-between bg-window-background">
-        <Button
-          variant="ghost"
-          size="md"
-          onClick={startOver}
-        >
-          Start over
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="md"
+            onClick={startOver}
+          >
+            Start over
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            disabled={!hasTranscript}
+            title={hasTranscript ? "Ask about this transcript (⌘K)" : "Transcribe first"}
+            onClick={() => setAskOpen((v) => !v)}
+          >
+            <Icon name="chat" size="md" /> Ask
+          </Button>
+        </div>
         {(running || backendRunning) ? (
           <Button
             variant="destructive"
