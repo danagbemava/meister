@@ -473,6 +473,9 @@ pub(crate) fn cache_write(cache_dir: &Path, key: &str, content: &str) -> std::io
 /// Honors `keep_alive: "30m"`, fixed REQUEST_TIMEOUT_SECS / INACTIVITY_TIMEOUT_SECS,
 /// and races the read against `cancel.cancelled()` (returns `Err("cancelled")`
 /// promptly if tripped during an await).
+///
+/// `on_token` is `Send` so this future can be polled inside a Tauri command
+/// (Tauri requires command futures to be `Send`).
 pub(crate) async fn ollama_stream(
     ollama_url: &str,
     model: &str,
@@ -484,7 +487,10 @@ pub(crate) async fn ollama_stream(
     use futures_util::StreamExt;
 
     #[derive(serde::Serialize)]
-    struct Options { num_ctx: u32, num_predict: i32 }
+    struct Options {
+        num_ctx: u32,
+        num_predict: i32,
+    }
     #[derive(serde::Serialize)]
     struct Req<'a> {
         model: &'a str,
@@ -497,7 +503,13 @@ pub(crate) async fn ollama_stream(
     const REQUEST_TIMEOUT_SECS: u64 = 480;
     const INACTIVITY_TIMEOUT_SECS: u64 = 120;
 
-    let body = Req { model, prompt, stream: true, keep_alive: "30m", options: Options { num_ctx, num_predict: -1 } };
+    let body = Req {
+        model,
+        prompt,
+        stream: true,
+        keep_alive: "30m",
+        options: Options { num_ctx, num_predict: -1 },
+    };
 
     let client = reqwest::Client::new();
     let resp = client
@@ -538,7 +550,7 @@ pub(crate) async fn ollama_stream(
             Ok(None) => break,
             Err(_) => {
                 return Err(format!(
-                    "Ollama at {ollama_url} stopped responding (no data for {INACTIVITY_TIMEOUT_SECS}s). The model may have been unloaded or the server crashed."
+                    "Ollama at {ollama_url} stopped responding (no data for {INACTIVITY_TIMEOUT_SECS}s). The model may have been unloaded or the server crashed. Try: pkill ollama && OLLAMA_NUM_PARALLEL=3 ollama serve, then re-run."
                 ));
             }
         };
@@ -1858,6 +1870,8 @@ mod tests {
         assert_eq!(calls[0]["prompt"], "PROMPT");
         let toks = collected.lock().unwrap();
         assert!(toks.len() >= 2, "expected multiple token callbacks, got {}", toks.len());
+        let reconstructed: String = toks.iter().map(|s| s.as_str()).collect();
+        assert_eq!(reconstructed, "hello world.");
     }
 }
 
