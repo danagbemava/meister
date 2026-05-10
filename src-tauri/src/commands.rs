@@ -467,26 +467,24 @@ pub(crate) fn cache_write(cache_dir: &Path, key: &str, content: &str) -> std::io
     std::fs::write(cache_dir.join(format!("{key}.md")), content)
 }
 
-/// Call Ollama /api/generate with streaming, forward tokens to `on_progress`
-/// with the given phase (and optional chunk info). Returns the accumulated
-/// output. Honors `keep_alive: "30m"` and explicit `num_ctx` / `num_predict`.
-async fn ollama_generate_stream(
+/// Generic Ollama `/api/generate` streaming helper. Accumulates the response
+/// body, invoking `on_token(piece)` for every streamed `response` field.
+///
+/// Honors `keep_alive: "30m"`, fixed REQUEST_TIMEOUT_SECS / INACTIVITY_TIMEOUT_SECS,
+/// and races the read against `cancel.cancelled()` (returns `Err("cancelled")`
+/// promptly if tripped during an await).
+pub(crate) async fn ollama_stream(
     ollama_url: &str,
     model: &str,
     prompt: String,
     num_ctx: u32,
-    phase: FormatPhase,
-    chunk: Option<ChunkInfo>,
-    on_progress: &(dyn Fn(FormatProgress) + Send + Sync),
+    on_token: &mut (dyn FnMut(&str) + Send),
     cancel: Option<&crate::cancellation::CancelToken>,
 ) -> Result<String, String> {
     use futures_util::StreamExt;
 
     #[derive(serde::Serialize)]
-    struct Options {
-        num_ctx: u32,
-        num_predict: i32,
-    }
+    struct Options { num_ctx: u32, num_predict: i32 }
     #[derive(serde::Serialize)]
     struct Req<'a> {
         model: &'a str,
@@ -496,24 +494,10 @@ async fn ollama_generate_stream(
         options: Options,
     }
 
-    let body = Req {
-        model,
-        prompt,
-        stream: true,
-        keep_alive: "30m",
-        options: Options { num_ctx, num_predict: -1 },
-    };
-
-    // Overall budget for the whole request (model load + generation). Gemma-3
-    // 27b / Gemma-4 on a warm GPU take ~2–4 min per chunk; 8 min is the
-    // outer wall.
     const REQUEST_TIMEOUT_SECS: u64 = 480;
-    // Inter-chunk watchdog: if no streaming bytes arrive for this long we
-    // assume Ollama has wedged (crashed, evicted the model, dropped the
-    // socket) and fail fast instead of hanging on a dead connection until
-    // REQUEST_TIMEOUT_SECS. 120 s leaves headroom for a cold model load
-    // before the first token.
     const INACTIVITY_TIMEOUT_SECS: u64 = 120;
+
+    let body = Req { model, prompt, stream: true, keep_alive: "30m", options: Options { num_ctx, num_predict: -1 } };
 
     let client = reqwest::Client::new();
     let resp = client
@@ -534,9 +518,6 @@ async fn ollama_generate_stream(
     let mut buf = String::new();
     let mut accumulated = String::new();
     loop {
-        // Race the next-chunk read against cancellation. Polling-only checks
-        // could miss a `cancel()` that fires while parked inside `stream.next()`,
-        // which on a cold model load can be 30–60 s before the first byte.
         let cancel_fut = async {
             match cancel {
                 Some(c) => c.cancelled().await,
@@ -557,7 +538,7 @@ async fn ollama_generate_stream(
             Ok(None) => break,
             Err(_) => {
                 return Err(format!(
-                    "Ollama at {ollama_url} stopped responding (no data for {INACTIVITY_TIMEOUT_SECS}s). The model may have been unloaded or the server crashed. Try: pkill ollama && OLLAMA_NUM_PARALLEL=3 ollama serve, then re-run."
+                    "Ollama at {ollama_url} stopped responding (no data for {INACTIVITY_TIMEOUT_SECS}s). The model may have been unloaded or the server crashed."
                 ));
             }
         };
@@ -573,19 +554,37 @@ async fn ollama_generate_stream(
             };
             if let Some(piece) = obj.get("response").and_then(|v| v.as_str()) {
                 accumulated.push_str(piece);
-                on_progress(FormatProgress {
-                    phase,
-                    chunk: chunk.clone(),
-                    chars: accumulated.chars().count(),
-                    done: false,
-                });
-            }
-            if obj.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
-                // Dispatcher owns the terminal done=true event.
+                on_token(piece);
             }
         }
     }
     Ok(accumulated)
+}
+
+/// Call Ollama /api/generate with streaming, forward tokens to `on_progress`
+/// with the given phase (and optional chunk info). Returns the accumulated
+/// output. Honors `keep_alive: "30m"` and explicit `num_ctx` / `num_predict`.
+async fn ollama_generate_stream(
+    ollama_url: &str,
+    model: &str,
+    prompt: String,
+    num_ctx: u32,
+    phase: FormatPhase,
+    chunk: Option<ChunkInfo>,
+    on_progress: &(dyn Fn(FormatProgress) + Send + Sync),
+    cancel: Option<&crate::cancellation::CancelToken>,
+) -> Result<String, String> {
+    let mut accumulated_chars: usize = 0;
+    let mut on_token = |piece: &str| {
+        accumulated_chars += piece.chars().count();
+        on_progress(FormatProgress {
+            phase,
+            chunk: chunk.clone(),
+            chars: accumulated_chars,
+            done: false,
+        });
+    };
+    ollama_stream(ollama_url, model, prompt, num_ctx, &mut on_token, cancel).await
 }
 
 fn build_map_prompt(chunk: &str, index: usize, total: usize) -> String {
@@ -1837,6 +1836,28 @@ mod tests {
             !p.contains("layout and style of the FORMAT TEMPLATE"),
             "old conflated phrasing must be removed"
         );
+    }
+
+    #[tokio::test]
+    async fn ollama_stream_collects_tokens_and_calls_back() {
+        let mock = MockOllama::spawn(|_| "hello world.".to_string()).await;
+        let collected: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let cb = {
+            let collected = collected.clone();
+            move |tok: &str| collected.lock().unwrap().push(tok.to_string())
+        };
+        let out = ollama_stream(
+            &mock.base_url, "gemma3", "PROMPT".into(), 8192,
+            &mut { cb }, None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.trim(), "hello world.");
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["prompt"], "PROMPT");
+        let toks = collected.lock().unwrap();
+        assert!(toks.len() >= 2, "expected multiple token callbacks, got {}", toks.len());
     }
 }
 
