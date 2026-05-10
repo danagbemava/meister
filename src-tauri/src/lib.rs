@@ -4,6 +4,7 @@ pub mod vibrancy;
 pub mod transcription;
 pub mod storage;
 pub mod orchestrator;
+pub mod ask;
 pub mod capture;
 pub mod cancellation;
 pub mod menu;
