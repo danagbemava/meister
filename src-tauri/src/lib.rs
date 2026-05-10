@@ -104,6 +104,7 @@ pub fn run() {
             app.manage(std::sync::Arc::new(store));
             app.manage(std::sync::Arc::new(capture::CallCaptureRegistry::new()));
             app.manage(std::sync::Arc::new(cancellation::RecordingCancelRegistry::default()));
+            app.manage(Arc::new(crate::ask::cancel::AskCancelRegistry::default()));
 
             accent::install_observer(app.handle().clone());
 
@@ -157,6 +158,8 @@ pub fn run() {
             vibrancy::get_reduce_transparency,
             vibrancy::is_vibrancy_active,
             orchestrator::run_recording,
+            ask::ask_query,
+            ask::cancel_ask,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Meister");
