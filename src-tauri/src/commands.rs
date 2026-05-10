@@ -330,6 +330,13 @@ fn approx_tokens(s: &str) -> usize {
     s.chars().count() / CHARS_PER_TOKEN
 }
 
+/// Re-exports for sibling modules (e.g. `ask::strategy`) that need the same
+/// threshold boundary. Keeps the original symbols private to `commands`.
+pub(crate) const THRESHOLD_PUB: usize = THRESHOLD;
+pub(crate) fn approx_tokens_pub(s: &str) -> usize {
+    approx_tokens(s)
+}
+
 /// Advance `i` forward until it lands on a UTF-8 char boundary, then clamp to
 /// `s.len()`. Ensures byte-offset slices into `s` never split a codepoint.
 fn snap_to_char_boundary(s: &str, mut i: usize) -> usize {
