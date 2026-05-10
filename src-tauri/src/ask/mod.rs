@@ -3,5 +3,6 @@
 
 pub mod citations;
 pub mod prompts;
+pub mod single_shot;
 pub mod strategy;
 pub mod types;
