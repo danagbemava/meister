@@ -73,12 +73,12 @@ describe("useAsk", () => {
   });
 
   it("forwards askApi errors as a failed assistant turn", async () => {
-    vi.mocked(askApi.query).mockRejectedValue("Cannot reach Ollama");
+    vi.mocked(askApi.query).mockRejectedValue("some other error");
     const { result } = renderHook(() => useAsk("rec-1"));
     await act(async () => { await result.current.ask("Q"); });
     const last = result.current.threads[0].turns.at(-1)!;
     expect(last.role).toBe("assistant");
-    expect(last.content).toMatch(/Cannot reach Ollama/);
+    expect(last.content).toMatch(/some other error/);
   });
 
   it("cancel() invokes askApi.cancel for the current recording", async () => {
@@ -86,5 +86,37 @@ describe("useAsk", () => {
     const { result } = renderHook(() => useAsk("rec-1"));
     await act(async () => { await result.current.cancel(); });
     expect(askApi.cancel).toHaveBeenCalledWith("rec-1");
+  });
+
+  it("drops the partial assistant turn when the query is cancelled", async () => {
+    vi.mocked(askApi.query).mockRejectedValue("cancelled");
+    const { result } = renderHook(() => useAsk("rec-1"));
+    await act(async () => { await result.current.ask("Q"); });
+    // The user turn stays; no assistant turn is appended.
+    expect(result.current.threads).toHaveLength(1);
+    expect(result.current.threads[0].turns).toEqual([
+      { role: "user", content: "Q" },
+    ]);
+    expect(result.current.threads[0].pending).toBe(false);
+  });
+
+  it("rephrases Ollama unreachable errors", async () => {
+    vi.mocked(askApi.query).mockRejectedValue("Cannot reach Ollama at http://localhost:11434: ECONNREFUSED");
+    const { result } = renderHook(() => useAsk("rec-1"));
+    await act(async () => { await result.current.ask("Q"); });
+    const last = result.current.threads[0].turns.at(-1)!;
+    expect(last.content).toBe("Error: Couldn't reach the model — is Ollama running?");
+  });
+
+  it("removeThread drops the named thread", async () => {
+    vi.mocked(askApi.query).mockResolvedValue({ text: "a", citations: [] });
+    const { result } = renderHook(() => useAsk("rec-1"));
+    await act(async () => { await result.current.ask("Q1"); });
+    await act(async () => { await result.current.ask("Q2"); });
+    expect(result.current.threads).toHaveLength(2);
+    const tid = result.current.threads[0].id;
+    act(() => { result.current.removeThread(tid); });
+    expect(result.current.threads).toHaveLength(1);
+    expect(result.current.threads[0].turns[0].content).toBe("Q2");
   });
 });

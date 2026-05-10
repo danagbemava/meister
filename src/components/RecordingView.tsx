@@ -135,6 +135,10 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     return () => window.removeEventListener("keydown", onKey);
   }, [hasTranscript]);
 
+  useEffect(() => {
+    setHighlightRange(undefined);
+  }, [recordingId]);
+
   if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>

@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function AskPanel({ recordingId, disabled, onCitationClick }: Props) {
-  const { threads, ask, cancel, clearAll } = useAsk(recordingId);
+  const { threads, ask, cancel, clearAll, removeThread } = useAsk(recordingId);
   const [input, setInput] = useState("");
 
   const trimmed = input.trim();
@@ -43,7 +43,17 @@ export default function AskPanel({ recordingId, disabled, onCitationClick }: Pro
 
       <ol className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto scrollable">
         {threads.map((thread) => (
-          <li key={thread.id} className="flex flex-col gap-2">
+          <li key={thread.id} className="flex flex-col gap-2 relative">
+            {!thread.pending && (
+              <button
+                type="button"
+                aria-label="Dismiss thread"
+                onClick={() => removeThread(thread.id)}
+                className="absolute top-0 right-0 text-label-tertiary hover:text-label-primary text-callout"
+              >
+                ×
+              </button>
+            )}
             {thread.turns.map((turn, idx) => (
               <div key={idx} className="flex flex-col gap-1">
                 {turn.role === "user" ? (

@@ -72,4 +72,17 @@ describe("AskPanel", () => {
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
   });
+
+  it("dismisses a thread via its × button", async () => {
+    vi.mocked(askApi.query).mockResolvedValue({ text: "answer.", citations: [] });
+    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} />);
+    await userEvent.type(screen.getByRole("textbox"), "q?");
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    await screen.findByText(/answer\./);
+    // The dismiss button is in the thread item.
+    const dismiss = screen.getByRole("button", { name: /dismiss thread/i });
+    await userEvent.click(dismiss);
+    // Thread is gone; only the empty-state hint remains.
+    expect(screen.getByText(/Ask anything about this transcript/i)).toBeInTheDocument();
+  });
 });

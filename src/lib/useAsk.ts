@@ -25,6 +25,11 @@ function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function removeThread(recordingId: string, threadId: string) {
+  const cur = getThreads(recordingId);
+  setThreads(recordingId, cur.filter((t) => t.id !== threadId));
+}
+
 async function runQuery(
   recordingId: string,
   question: string,
@@ -60,12 +65,24 @@ async function runQuery(
     assistant = { role: "assistant", content: ans.text, citations: ans.citations };
   } catch (e) {
     const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
-    assistant = { role: "assistant", content: `Error: ${msg}` };
+    if (msg === "cancelled") {
+      // User clicked Stop. Drop the partial turn; user's question remains.
+      const after = getThreads(recordingId).map((t) =>
+        t.id === target.id ? { ...t, pending: false, streamingText: undefined } : t,
+      );
+      setThreads(recordingId, after);
+      return;
+    }
+    // Map known connection errors to a friendlier phrasing per spec.
+    const friendly = msg.startsWith("Cannot reach Ollama")
+      ? "Couldn't reach the model — is Ollama running?"
+      : msg;
+    assistant = { role: "assistant", content: `Error: ${friendly}` };
   }
 
   const after = getThreads(recordingId).map((t) =>
     t.id === target.id
-      ? { ...t, pending: false, turns: [...t.turns, assistant], streamingText: undefined }
+      ? { ...t, pending: false, turns: [...t.turns, assistant!], streamingText: undefined }
       : t,
   );
   setThreads(recordingId, after);
@@ -90,13 +107,25 @@ export function useAsk(recordingId: string) {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         if (cancelled) return;
-        unlisten = await listen<{ phase: string; chars?: number }>("ask-progress", (e) => {
+        unlisten = await listen<
+          | { phase: "search"; chunk: { index: number; total: number } }
+          | { phase: "answer"; chars: number }
+          | { phase: "done" }
+        >("ask-progress", (e) => {
           if (cancelled) return;
-          if (e.payload.phase !== "answer" || typeof e.payload.chars !== "number") return;
+          let streamingText: string | undefined;
+          if (e.payload.phase === "search") {
+            const { index, total } = (e.payload as { phase: "search"; chunk: { index: number; total: number } }).chunk;
+            streamingText = `Searching transcript (${index + 1} / ${total})…`;
+          } else if (e.payload.phase === "answer") {
+            streamingText = `Answering… (${(e.payload as { phase: "answer"; chars: number }).chars} chars)`;
+          } else {
+            return; // "done" — nothing to render
+          }
           const cur = getThreads(recordingId);
           const idx = cur.findIndex((t) => t.pending);
           if (idx === -1) return;
-          const updated = { ...cur[idx], streamingText: `(${e.payload.chars} chars…)` };
+          const updated = { ...cur[idx], streamingText };
           setThreads(recordingId, [...cur.slice(0, idx), updated, ...cur.slice(idx + 1)]);
         });
       } catch {
@@ -114,6 +143,7 @@ export function useAsk(recordingId: string) {
     ask: (question: string, threadId?: string) => runQuery(recordingId, question, threadId),
     cancel: () => askApi.cancel(recordingId),
     clearAll: () => setThreads(recordingId, []),
+    removeThread: (threadId: string) => removeThread(recordingId, threadId),
   };
 }
 
