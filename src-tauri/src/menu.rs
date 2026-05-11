@@ -13,10 +13,9 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .version(Some(env!("CARGO_PKG_VERSION")))
         .build();
 
-    let preferences = MenuItemBuilder::new("Preferences…")
-        .id("menu:preferences")
+    let preferences = MenuItemBuilder::new("Settings…")
+        .id("menu:settings")
         .accelerator("CmdOrCtrl+,")
-        .enabled(false)
         .build(app)?;
 
     let app_submenu = SubmenuBuilder::new(app, "Meister")
@@ -42,10 +41,16 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .id("menu:import-audio")
         .accelerator("CmdOrCtrl+Shift+I")
         .build(app)?;
+    let export = MenuItemBuilder::new("Export…")
+        .id("menu:export")
+        .accelerator("CmdOrCtrl+E")
+        .build(app)?;
 
     let file_submenu = SubmenuBuilder::new(app, "File")
         .item(&new_project)
         .item(&import_audio)
+        .separator()
+        .item(&export)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;

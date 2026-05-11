@@ -23,6 +23,21 @@
         "decorations": true,
         "transparent": true,
         "titleBarStyle": "Overlay"
+      },
+      {
+        "label": "settings",
+        "title": "Settings",
+        "url": "index.html",
+        "width": 520,
+        "height": 640,
+        "minWidth": 480,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "visible": false
       }
     ],
     "security": {
