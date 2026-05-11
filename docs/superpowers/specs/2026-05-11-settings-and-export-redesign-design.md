@@ -23,7 +23,7 @@ This spec also folds in a long-pending UI cleanup for the **Ask** feature: today
 
 - Per-recording settings overrides (removed entirely; not coming back as a hidden panel).
 - Cloud LLM or local `llama-cpp` integration (covered separately in `2026-05-05-ollama-removal-research.md`).
-- Schema versioning / migration framework (single-user local app — read-time tolerance is sufficient).
+- Cross-version compatibility for downgrades (one-way migration is acceptable; old builds can't open data written by new builds).
 - Multi-format batch export (export one format at a time; `⌘E` twice for two formats).
 
 ## Architecture & Data Model
@@ -70,10 +70,16 @@ The `AppSettings` type is deleted. `savedPaths` on `StageRecord`, the `save` sta
 
 ### Storage / backend
 
-- A new file `settings.json` is stored next to the existing project files. It contains the serialized `GlobalSettings`.
-- New Tauri commands: `get_global_settings`, `set_global_settings`, `open_settings_window`.
-- `run_recording` composes the effective settings each run by reading global settings and applying the recording's project's optional `language` override (`project.language || global.language`).
-- The `save` stage and `record_saved_outputs` are removed from the orchestrator and from `commands.rs`.
+Persistence is SQLite (`meister.db`). The codebase already has a versioned migration framework in `src-tauri/src/storage/schema.rs` (currently at `user_version = 3`). This work introduces a single forward migration `v3 → v4`:
+
+- Create table `app_settings` (single-row config): `ollama_url`, `model`, `whisper_model`, `language`, `default_export_format`, plus a `singleton` CHECK constraint to enforce one row.
+- Seed `app_settings` from the most-recently-updated row in `projects.default_settings` before dropping that column. If no projects exist, insert sensible defaults (`ollama_url = "http://localhost:11434"`, `model = ""`, `whisper_model = "base"`, `language = "auto"`, `default_export_format = "md"`).
+- `ALTER TABLE projects ADD COLUMN language TEXT;` (nullable).
+- `ALTER TABLE projects DROP COLUMN default_settings;`
+- `ALTER TABLE recordings DROP COLUMN settings;`
+- `DELETE FROM stages WHERE stage = 'save';` (existing save rows are obsolete under the new pipeline).
+
+New Tauri commands: `get_global_settings`, `set_global_settings`, `open_settings_window`. The `record_saved_outputs` command and the `save` stage handling in `orchestrator.rs` are removed. `run_recording` composes the effective settings each run by reading global settings and applying the recording's project's optional `language` override.
 
 ### Effective-settings resolution
 
@@ -145,25 +151,20 @@ Desktop-only app; narrow-window behavior is not specified.
 
 ## Migration
 
-Read-time tolerant, with a one-shot seed on first launch. There is no migration version field and no destructive rewrite.
+A single forward SQLite migration `v3 → v4` (see "Storage / backend" above for the full operation list) handles everything in one atomic transaction at app startup. Key points:
 
-- Rust serde types use `#[serde(default)]` for removed fields. Unknown keys are ignored by default.
-- On first launch of the new build, if `settings.json` does not exist:
-  - Look for the most-recently-updated `Project` that has a `defaultSettings` block.
-  - Seed `GlobalSettings` from its fields. `defaultExportFormat` seeds from the first entry of the project's `outputFormats` (or `md` if the array is empty).
-  - Write `settings.json`.
-- After seeding, `Project.defaultSettings` and `Recording.settings` are ignored on read. They get pruned naturally the next time the corresponding record is written (no migration pass needed).
-- The `save` stage entry in existing `Recording.stages` arrays is filtered out on read. `savedPaths` is ignored.
-- Old builds opening new data lose only the new fields; this is acceptable for a single-user local app.
+- `default_export_format` is seeded from the first entry of the source project's `default_settings.outputFormats` (or `"md"` if the array is empty).
+- `Recording.stages` rows where `stage = 'save'` are deleted — the `format` stage is now terminal.
+- The `Recording.saved_paths` JSON column on the `stages` table is no longer written. The column stays in place (SQLite makes column drops on older versions painful) and is simply ignored by readers; new writes pass `NULL`.
+- The migration is one-way. There is no downgrade path; this is acceptable for a single-user local app.
 
 ## Testing
 
 ### Rust (`tests/storage_integration.rs`)
 
-- Loading a legacy project + recording (with `defaultSettings`, per-recording `settings`, and a `save` stage) succeeds and yields the new shapes with extra fields ignored.
-- `settings.json` seeding: with no global settings file and one project with `defaultSettings`, `get_global_settings` returns a populated `GlobalSettings` and the file is written.
-- `get_global_settings` / `set_global_settings` round-trip.
-- A project with `language: "de"` overrides the global `language: "auto"` in the effective settings; a project with `language: null` does not.
+- Migrating from a v3 database that contains a project + recording + save-stage row leaves the database at `user_version = 4`, drops the `default_settings` and `settings` columns, populates `app_settings` with the seeded values, and removes the save-stage row.
+- `get_global_settings` / `set_global_settings` round-trip against the new table.
+- A project with `language = "de"` overrides the global `language = "auto"` in the effective settings; a project with `language = NULL` (or empty string) does not.
 
 ### Frontend
 
@@ -186,13 +187,18 @@ Read-time tolerant, with a one-shot seed on first launch. There is no migration 
 
 ### Backend (`src-tauri/`)
 
-- `src/storage/types.rs` — add `GlobalSettings`; loosen `Project` and `Recording` to tolerate legacy fields.
-- `src/storage/mod.rs` (or wherever path resolution lives) — `settings.json` path, `load_global_settings`, `save_global_settings`, one-shot seed function.
-- `src/commands.rs` — add `get_global_settings`, `set_global_settings`, `open_settings_window`; remove `record_saved_outputs`.
-- `src/orchestrator.rs` — drop `save` stage; pipeline ends at `format`; compose effective settings from `(global, project.language)` per run.
-- `src/menu.rs` — add `Settings…` (`⌘,`) and `Export…` (`⌘E`) items emitting `menu:settings` and `menu:export`.
-- `tauri.conf.json` — register the secondary settings window (label `settings`, hidden by default).
-- `tests/storage_integration.rs` — update.
+- `src/storage/types.rs` — add `GlobalSettings`; remove `AppSettings` from `Project`; remove `settings` from `Recording`; add `language: Option<String>` to `Project`; remove `StageKind::Save`.
+- `src/storage/schema.rs` — `CURRENT_VERSION = 4`; add `migrate_v3_to_v4`.
+- `src/storage/mod.rs` — new `app_settings` module with `get` / `set`.
+- `src/storage/projects.rs` — update CRUD to drop `default_settings`, add `language`.
+- `src/storage/recordings.rs` — update CRUD to drop `settings`.
+- `src/storage/stages.rs` — drop the `Save` branch references; `saved_paths` writes go away.
+- `src/commands.rs` — add `get_global_settings`, `set_global_settings`, `open_settings_window`; remove `record_saved_outputs`; update any signatures that took `AppSettings`.
+- `src/orchestrator.rs` — drop the `StageKind::Save` arm; iterate only `Extract/Transcribe/Format`; compose effective settings from `(global, project.language)` per run.
+- `src/menu.rs` — re-enable the existing `menu:preferences` item (rename id to `menu:settings`, `⌘,`); add `Export…` (`⌘E`) under File.
+- `src/lib.rs` — update `invoke_handler` list; in `setup`, create the hidden secondary `settings` window.
+- `tauri.conf.json` — register the secondary `settings` window (label `settings`, `visible: false`, sized for a Preferences pane).
+- `tests/storage_integration.rs` — migration test and effective-settings test.
 
 ### Frontend (`src/`)
 
