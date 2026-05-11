@@ -16,7 +16,8 @@ The overhaul was decomposed into 6 sub-projects, with #3 and #4 each split into 
 | #4b Notifications + Help/About | not started | |
 | #4c Preferences + Undo | not started | |
 | #5 SF Symbols + icon pass | shipped | direct to `main` 2026-05-07 |
-| #6 Component redesign | not started | |
+| #6 Component redesign | in flight | |
+| ↳ #6.2 Sidebar Source List + Liquid Glass | shipped | direct to `main` 2026-05-11 |
 
 ## What shipped (per slice)
 
@@ -106,11 +107,23 @@ These patterns recur across slices and should inform future work:
 - Forward-looking icons registered (`gear`, `question`, `info`, `sidebar`, `folder`, `recording`, `pencil`) so #4b/#4c/#6 don't have to touch `Icon.tsx`.
 - 31 new frontend tests (Icon + Button extension); total 103 frontend tests passing.
 
+### #6.2 — Sidebar Source List + Liquid Glass
+- New Rust module `glass.rs` bridges `NSGlassEffectView` (macOS 26+) via `objc2` `msg_send!` with a runtime macOS-version check; falls back to `NSVisualEffectView` (`.sidebar` material) on pre-Tahoe. Webview reports the sidebar's CSS-pixel rect via `report_sidebar_frame` Tauri command on mount + `ResizeObserver`; Rust converts browser→AppKit coordinates and reframes the glass view to match.
+- Reduce-transparency wired: the existing `system-reduce-transparency-changed` event (from #2) is listened to in `lib.rs`; on toggle it calls `glass::set_sidebar_glass_enabled` to detach/reattach the native view; webview-side opaque tokens take over.
+- Sidebar rewritten as a Tahoe Source List: sticky search field at top (filters projects + recordings; auto-expands projects with matching recordings), UPPERCASE "PROJECTS" section header, project rows with disclosure carets and FNV-1a-derived folder colors (4-hue palette), 30px-indented recording rows under each open project. Selection uses the system accent fill; hover applies `--sidebar-row-hover`; disclosure state persists to localStorage per-project.
+- New tokens in `tokens.css`: `--sidebar-row-hover`, `--sidebar-row-selected`, `--sidebar-row-selected-text`, `--sidebar-divider`, `--sidebar-section-label`, `--sidebar-search-bg`, `--sidebar-search-border`, plus eight folder gradient stops. Light + dark + reduce-transparency variants.
+- New icon `magnifying-glass` (Phosphor `MagnifyingGlass`) registered.
+- ARIA: `aria-current="page"` on selected rows, `aria-expanded` on disclosure-bearing rows, accessible names on project + recording + search + clear-button. Existing `focus-visible` ring carried over.
+- 7 new Sidebar tests + 4 new folderColor tests + 4 new glass-math tests; 133 frontend / 156 backend tests pass.
+- Removed from rewrite: the hover-`+` per-row file-pick affordance (intentionally dropped — users add recordings via the main-content `RecordingDropZone`).
+
 ## What's next
 
 - **#4b — Notifications + Help/About.** Native notifications when long-running steps (Format, Save) complete. Help menu populated. About dialog with app version + GitHub link.
 - **#4c — Preferences + Undo.** Global Preferences pane (⌘,) with default-inheritance for new projects. Undo/Redo plumbing for inline rename (replaces or coexists with the predefined Edit menu items currently routing to WebKit).
-- **#6 — Component redesign pass.** Full visual polish: Source-List-style sidebar (NSOutlineView treatment), card-on-island elevation distinction, modal scrim semantics, light-mode tuning, hover-disclosure chevron on rows (deferred from #5), etc.
+- **#6.3 — Toolbar + chrome density.** Tahoe toolbars (~52pt) + new material; affects `Toolbar` primitive and the project/recording view headers.
+- **#6.4 — Card / island elevation.** Move from flat-bordered cards to a Tahoe-style 2-level elevation hierarchy.
+- **#6.5+** — Empty/idle states, RecordingView transcript polish, forms, light-mode pass, modals, motion.
 
 ## References
 
