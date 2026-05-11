@@ -2,7 +2,7 @@
 //! stage's cached output is still valid given the current recording settings
 //! and project template. `run_recording` is added in a later task.
 
-use crate::storage::{AppSettings, StageKind, StageRecord, StageStatus};
+use crate::storage::{EffectiveSettings, StageKind, StageRecord, StageStatus};
 
 /// Returns `true` if the stage's cached inputs still match the current
 /// recording settings + template hash, meaning its cached output can be
@@ -10,7 +10,7 @@ use crate::storage::{AppSettings, StageKind, StageRecord, StageStatus};
 pub fn inputs_unchanged(
     stage_kind: StageKind,
     stage: &StageRecord,
-    current_settings: &AppSettings,
+    current_settings: &EffectiveSettings,
     current_template_hash: &str,
     current_source_path: &str,
     extract_artifact_exists: bool,
@@ -37,21 +37,6 @@ pub fn inputs_unchanged(
         StageKind::Format => {
             stage.model_used.as_deref() == Some(current_settings.model.as_str())
                 && stage.template_hash.as_deref() == Some(current_template_hash)
-        }
-        StageKind::Save => {
-            // Rerun save if the requested format set changed or any saved
-            // file is missing on disk.
-            let Some(saved) = &stage.saved_paths else { return false; };
-            let formats_match = saved
-                .iter()
-                .all(|p| saved_path_matches_any_format(p, &current_settings.output_formats))
-                && current_settings.output_formats.iter().all(|fmt| {
-                    saved.iter().any(|p| path_has_extension(p, fmt_to_ext(fmt)))
-                });
-            if !formats_match {
-                return false;
-            }
-            saved.iter().all(|p| std::path::Path::new(p).is_file())
         }
     }
 }
@@ -81,31 +66,6 @@ fn matches_transcribe_model(stage: &StageRecord, current: &str) -> bool {
         },
         None => false,
     }
-}
-
-fn fmt_to_ext(fmt: &crate::storage::OutputFormat) -> &'static str {
-    use crate::storage::OutputFormat::*;
-    match fmt {
-        Md => "md",
-        Txt => "txt",
-        Docx => "docx",
-        Pdf => "pdf",
-    }
-}
-
-fn path_has_extension(path: &str, ext: &str) -> bool {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.eq_ignore_ascii_case(ext))
-        .unwrap_or(false)
-}
-
-fn saved_path_matches_any_format(
-    path: &str,
-    formats: &[crate::storage::OutputFormat],
-) -> bool {
-    formats.iter().any(|f| path_has_extension(path, fmt_to_ext(f)))
 }
 
 use std::sync::Arc;
@@ -158,6 +118,10 @@ pub async fn run_recording(
         .map_err(|e| format!("load project: {e}"))?
         .ok_or_else(|| format!("project not found: {}", rec.project_id))?;
 
+    let global = storage::app_settings::get(&store)
+        .map_err(|e| format!("load app settings: {e}"))?;
+    let effective = storage::EffectiveSettings::from(&global, project.language.as_deref());
+
     let template_hash = storage::template_hash(&project.template.content);
     let rec_dir = recording_dir(&app, &recording_id)?;
     let wav_paths: Vec<std::path::PathBuf> = (0..rec.source_paths.len())
@@ -187,7 +151,7 @@ pub async fn run_recording(
             && inputs_unchanged(
                 stage_kind,
                 stage,
-                &rec.settings,
+                &effective,
                 &template_hash,
                 first_source,
                 wavs_exist,
@@ -228,13 +192,12 @@ pub async fn run_recording(
                         output: None,
                         model_used: None,
                         template_hash: None,
-                        saved_paths: None,
                         completed_at: now_ms(),
                     })
             }
             StageKind::Transcribe => {
-                let whisper_model = rec.settings.whisper_model.clone();
-                let language = rec.settings.language.clone();
+                let whisper_model = effective.whisper_model.clone();
+                let language = effective.language.clone();
                 let total = wav_paths.len();
                 let mut parts: Vec<String> = Vec::with_capacity(total);
                 let mut transcribe_err: Option<String> = None;
@@ -256,7 +219,6 @@ pub async fn run_recording(
                         // Encode language into model_used for invalidation checks.
                         model_used: Some(format!("{}@{}", whisper_model, language)),
                         template_hash: None,
-                        saved_paths: None,
                         completed_at: now_ms(),
                     })
                 }
@@ -276,8 +238,8 @@ pub async fn run_recording(
                     &app,
                     &transcript,
                     &project.template.content,
-                    &rec.settings.ollama_url,
-                    &rec.settings.model,
+                    &effective.ollama_url,
+                    &effective.model,
                     project.template.match_style,
                     &project.custom_instructions,
                     Some(cancel.clone()),
@@ -285,22 +247,8 @@ pub async fn run_recording(
                 .await?;
                 Ok(storage::stages::CompletedOutput {
                     output: Some(formatted),
-                    model_used: Some(rec.settings.model.clone()),
+                    model_used: Some(effective.model.clone()),
                     template_hash: Some(template_hash.clone()),
-                    saved_paths: None,
-                    completed_at: now_ms(),
-                })
-            }
-            StageKind::Save => {
-                // Save is user-interactive (file dialogs). We do not run it here —
-                // the UI invokes `save_recording_outputs` separately once the user
-                // picks destinations. Flip this stage to completed with an empty
-                // saved_paths list; the UI will update it.
-                Ok(storage::stages::CompletedOutput {
-                    output: None,
-                    model_used: None,
-                    template_hash: None,
-                    saved_paths: Some(Vec::new()),
                     completed_at: now_ms(),
                 })
             }
@@ -337,15 +285,14 @@ pub async fn run_recording(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{AppSettings, OutputFormat, StageKind, StageRecord, StageStatus};
+    use crate::storage::{EffectiveSettings, StageKind, StageRecord, StageStatus};
 
-    fn settings() -> AppSettings {
-        AppSettings {
+    fn settings() -> EffectiveSettings {
+        EffectiveSettings {
             ollama_url: "u".to_string(),
             model: "gemma3".to_string(),
             whisper_model: "base".to_string(),
             language: "en".to_string(),
-            output_formats: vec![OutputFormat::Md],
         }
     }
 
@@ -358,7 +305,6 @@ mod tests {
             model_used: None,
             template_hash: None,
             output: None,
-            saved_paths: None,
         }
     }
 
@@ -398,28 +344,5 @@ mod tests {
         s.model_used = Some("llama3".to_string());
         s.template_hash = Some("h".to_string());
         assert!(!inputs_unchanged(StageKind::Format, &s, &settings(), "h", "/x", true));
-    }
-
-    #[test]
-    fn save_invalid_if_paths_missing() {
-        let mut s = completed_stage(StageKind::Save);
-        s.saved_paths = Some(vec!["/definitely/not/here.md".to_string()]);
-        assert!(!inputs_unchanged(StageKind::Save, &s, &settings(), "h", "/x", true));
-    }
-
-    #[test]
-    fn save_invalid_if_output_formats_changed() {
-        let mut s = completed_stage(StageKind::Save);
-        // Pretend the file exists — build a temp file.
-        let dir = std::env::temp_dir();
-        let f = dir.join("meister_test.md");
-        std::fs::write(&f, "x").unwrap();
-        s.saved_paths = Some(vec![f.to_string_lossy().to_string()]);
-
-        let mut cur = settings();
-        cur.output_formats = vec![OutputFormat::Md, OutputFormat::Txt];
-        assert!(!inputs_unchanged(StageKind::Save, &s, &cur, "h", "/x", true));
-
-        let _ = std::fs::remove_file(&f);
     }
 }
