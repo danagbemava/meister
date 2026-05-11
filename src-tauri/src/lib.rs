@@ -1,13 +1,14 @@
 mod commands;
 pub mod accent;
-pub mod vibrancy;
-pub mod transcription;
-pub mod storage;
-pub mod orchestrator;
 pub mod ask;
-pub mod capture;
 pub mod cancellation;
+pub mod capture;
+pub mod glass;
 pub mod menu;
+pub mod orchestrator;
+pub mod storage;
+pub mod transcription;
+pub mod vibrancy;
 
 #[cfg(test)]
 mod test_support;
