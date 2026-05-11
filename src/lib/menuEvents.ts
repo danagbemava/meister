@@ -4,7 +4,9 @@ export type MenuEventName =
   | "menu:new-project"
   | "menu:import-audio"
   | "menu:run-pipeline"
-  | "menu:toggle-sidebar";
+  | "menu:toggle-sidebar"
+  | "menu:settings"
+  | "menu:export";
 
 type Handler = () => void;
 
@@ -23,6 +25,8 @@ export async function initMenuEvents(): Promise<void> {
     "menu:import-audio",
     "menu:run-pipeline",
     "menu:toggle-sidebar",
+    "menu:settings",
+    "menu:export",
   ];
   for (const ev of events) {
     try {

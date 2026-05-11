@@ -96,6 +96,12 @@ export default function App() {
     setMenuHandler("menu:toggle-sidebar", () => {
       setSidebarVisible((v) => !v);
     });
+    setMenuHandler("menu:settings", () => {
+      void api.openSettingsWindow();
+    });
+    setMenuHandler("menu:export", () => {
+      recordingViewRef.current?.exportFile();
+    });
   }, [importAudioToActiveProject]);
 
   useEffect(() => {
