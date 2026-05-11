@@ -10,6 +10,7 @@ pub mod projects;
 pub mod recordings;
 pub mod stages;
 pub mod hash;
+pub mod app_settings;
 
 pub use types::*;
 pub use hash::template_hash;
