@@ -4,14 +4,12 @@ import { SegmentedControl } from "./ui";
 interface Props {
   transcript?: string | null;
   formatted?: string | null;
-  savedPaths?: string[] | null;
   highlightRange?: { start: number; end: number; nonce?: number };
 }
 
 export default function OutputPreview({
   transcript,
   formatted,
-  savedPaths,
   highlightRange,
 }: Props) {
   const has = (v?: string | null) => (v ?? "").length > 0;
@@ -88,14 +86,6 @@ export default function OutputPreview({
       <pre className="bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
         {tab === "formatted" ? (formatted ?? "") : renderTranscript()}
       </pre>
-      {savedPaths && savedPaths.length > 0 && (
-        <div className="text-footnote text-label-secondary">
-          Saved to:
-          <ul className="mt-1">
-            {savedPaths.map((p) => <li key={p} className="truncate">· {p}</li>)}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
