@@ -29,14 +29,6 @@ interface Props {
   onPickFilesForProject: (projectId: string, paths: string[]) => void;
 }
 
-const DEFAULTS = {
-  ollamaUrl: "http://localhost:11434",
-  model: "gemma3",
-  whisperModel: "base",
-  language: "auto",
-  outputFormats: ["md"] as const,
-};
-
 const EXPANDED_KEY = (projectId: string) => `sidebar-expanded-${projectId}`;
 
 function readExpanded(projectId: string): boolean {
@@ -153,11 +145,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
       setCreating(false);
       return;
     }
-    await api.createProject(
-      name,
-      { ...DEFAULTS, outputFormats: [...DEFAULTS.outputFormats] },
-      { source: "inline", content: "", sourcePath: null },
-    );
+    await api.createProject(name, { source: "inline", content: "", sourcePath: null });
     setCreating(false);
     setNewName("");
     onProjectsChanged();

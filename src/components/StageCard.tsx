@@ -13,14 +13,12 @@ const LABELS: Record<StageKind, string> = {
   extract: "Extract audio",
   transcribe: "Transcribe",
   format: "Format with LLM",
-  save: "Save outputs",
 };
 
 const ICONS: Record<StageKind, IconName> = {
   extract: "equalizer",
   transcribe: "doc-text",
   format: "sparkles",
-  save: "save",
 };
 
 export default function StageCard({ kind, status, error, subtitle, progress }: Props) {

@@ -40,7 +40,7 @@ describe("useGlobalSettings", () => {
   });
 
   it("update() calls set_global_settings and refreshes locally", async () => {
-    invokeMock.mockImplementation((name: string, args?: unknown) => {
+    invokeMock.mockImplementation((name: string) => {
       if (name === "get_global_settings") return Promise.resolve(SAMPLE);
       if (name === "set_global_settings") {
         return Promise.resolve();
