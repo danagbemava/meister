@@ -35,9 +35,9 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
 
   return (
     <aside
-      role="dialog"
+      role="complementary"
       aria-label="Ask AI"
-      className="fixed inset-y-0 end-0 z-20 w-[420px] bg-window-background/95 backdrop-blur-xl shadow-[-12px_0_24px_rgba(0,0,0,0.15)] flex flex-col"
+      className="h-full flex flex-col"
     >
       <header className="flex items-center justify-between px-4 py-3 border-b border-separator">
         <h3 className="text-headline font-semibold">Ask</h3>

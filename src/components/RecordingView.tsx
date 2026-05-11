@@ -260,7 +260,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           Delete
         </Button>
       </Toolbar>
-      <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
+      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-w-0 overflow-y-auto scrollable p-8 flex flex-col gap-6">
         <div className="flex flex-col gap-1">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
@@ -326,17 +327,6 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           formatted={formatted}
           highlightRange={highlightRange}
         />
-        {askOpen && rec && (
-          <AskPanel
-            recordingId={rec.id}
-            disabled={!hasTranscript}
-            onCitationClick={(c) => {
-              if (c.start === null || c.end === null) return;
-              setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
-            }}
-            onClose={() => setAskOpen(false)}
-          />
-        )}
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
           <div className="text-footnote text-label-tertiary space-y-1">
@@ -365,6 +355,20 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
             {formatProgress.phase === "reduce" && (
               <p>Composing output… {formatProgress.chars.toLocaleString()} chars</p>
             )}
+          </div>
+        )}
+      </div>
+        {askOpen && rec && (
+          <div className="w-[420px] shrink-0 border-s border-separator flex flex-col">
+            <AskPanel
+              recordingId={rec.id}
+              disabled={!hasTranscript}
+              onCitationClick={(c) => {
+                if (c.start === null || c.end === null) return;
+                setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
+              }}
+              onClose={() => setAskOpen(false)}
+            />
           </div>
         )}
       </div>
