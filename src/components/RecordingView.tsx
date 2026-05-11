@@ -321,25 +321,22 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           })}
         </div>
 
-        <div className={askOpen ? "flex gap-4" : ""}>
-          <div className="flex-1">
-            <OutputPreview
-              transcript={transcript}
-              formatted={formatted}
-              highlightRange={highlightRange}
-            />
-          </div>
-          {askOpen && rec && (
-            <AskPanel
-              recordingId={rec.id}
-              disabled={!hasTranscript}
-              onCitationClick={(c) => {
-                if (c.start === null || c.end === null) return;
-                setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
-              }}
-            />
-          )}
-        </div>
+        <OutputPreview
+          transcript={transcript}
+          formatted={formatted}
+          highlightRange={highlightRange}
+        />
+        {askOpen && rec && (
+          <AskPanel
+            recordingId={rec.id}
+            disabled={!hasTranscript}
+            onCitationClick={(c) => {
+              if (c.start === null || c.end === null) return;
+              setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
+            }}
+            onClose={() => setAskOpen(false)}
+          />
+        )}
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
           <div className="text-footnote text-label-tertiary space-y-1">

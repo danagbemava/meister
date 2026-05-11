@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input } from "./ui";
 import { useAsk } from "../lib/useAsk";
 import type { AskCitation } from "../types/ask";
@@ -7,15 +7,24 @@ interface Props {
   recordingId: string;
   disabled: boolean;
   onCitationClick: (c: AskCitation) => void;
+  onClose: () => void;
 }
 
-export default function AskPanel({ recordingId, disabled, onCitationClick }: Props) {
+export default function AskPanel({ recordingId, disabled, onCitationClick, onClose }: Props) {
   const { threads, ask, cancel, clearAll, removeThread } = useAsk(recordingId);
   const [input, setInput] = useState("");
 
   const trimmed = input.trim();
   const anyPending = threads.some((t) => t.pending);
   const canSend = !disabled && trimmed.length > 0 && !anyPending;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const submit = async (threadId?: string) => {
     if (!canSend) return;
@@ -25,99 +34,110 @@ export default function AskPanel({ recordingId, disabled, onCitationClick }: Pro
   };
 
   return (
-    <aside className="w-[360px] flex flex-col gap-3 border-l border-separator pl-4" aria-label="Ask AI">
-      <header className="flex items-center justify-between">
+    <aside
+      role="dialog"
+      aria-label="Ask AI"
+      className="fixed inset-y-0 end-0 z-20 w-[420px] bg-window-background/95 backdrop-blur-xl shadow-[-12px_0_24px_rgba(0,0,0,0.15)] flex flex-col"
+    >
+      <header className="flex items-center justify-between px-4 py-3 border-b border-separator">
         <h3 className="text-headline font-semibold">Ask</h3>
-        {threads.length > 0 && (
-          <Button variant="secondary" size="sm" onClick={clearAll}>
-            Clear all
+        <div className="flex items-center gap-2">
+          {threads.length > 0 && (
+            <Button variant="secondary" size="sm" onClick={clearAll}>
+              Clear all
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" aria-label="Close ask" onClick={onClose}>
+            ✕
           </Button>
-        )}
+        </div>
       </header>
 
-      {threads.length === 0 && !disabled && (
-        <p className="text-footnote text-label-secondary">
-          Ask anything about this transcript — e.g. <em>what was said about project financials?</em>
-        </p>
-      )}
+      <div className="flex-1 overflow-y-auto scrollable px-4 pt-3 flex flex-col gap-3">
+        {threads.length === 0 && !disabled && (
+          <p className="text-footnote text-label-secondary">
+            Ask anything about this transcript — e.g. <em>what was said about project financials?</em>
+          </p>
+        )}
 
-      <ol className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto scrollable">
-        {threads.map((thread) => (
-          <li key={thread.id} className="flex flex-col gap-2 relative">
-            {!thread.pending && (
-              <button
-                type="button"
-                aria-label="Dismiss thread"
-                onClick={() => removeThread(thread.id)}
-                className="absolute top-0 right-0 text-label-tertiary hover:text-label-primary text-callout"
-              >
-                ×
-              </button>
-            )}
-            {thread.turns.map((turn, idx) => (
-              <div key={idx} className="flex flex-col gap-1">
-                {turn.role === "user" ? (
-                  <div className="text-callout text-label-secondary">
-                    <span className="font-semibold">You:</span> {turn.content}
-                  </div>
-                ) : (
-                  <div className="text-callout text-label-primary whitespace-pre-wrap">
-                    {turn.content}
-                    {turn.citations && turn.citations.length > 0 && (
-                      <div className="mt-2 flex flex-col gap-1">
-                        {turn.citations.map((c, i) => {
-                          const matched = c.start !== null && c.end !== null;
-                          if (matched) {
+        <ol className="flex flex-col gap-4">
+          {threads.map((thread) => (
+            <li key={thread.id} className="flex flex-col gap-2 relative">
+              {!thread.pending && (
+                <button
+                  type="button"
+                  aria-label="Dismiss thread"
+                  onClick={() => removeThread(thread.id)}
+                  className="absolute top-0 right-0 text-label-tertiary hover:text-label-primary text-callout"
+                >
+                  ×
+                </button>
+              )}
+              {thread.turns.map((turn, idx) => (
+                <div key={idx} className="flex flex-col gap-1">
+                  {turn.role === "user" ? (
+                    <div className="text-callout text-label-secondary">
+                      <span className="font-semibold">You:</span> {turn.content}
+                    </div>
+                  ) : (
+                    <div className="text-callout text-label-primary whitespace-pre-wrap">
+                      {turn.content}
+                      {turn.citations && turn.citations.length > 0 && (
+                        <div className="mt-2 flex flex-col gap-1">
+                          {turn.citations.map((c, i) => {
+                            const matched = c.start !== null && c.end !== null;
+                            if (matched) {
+                              return (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => onCitationClick(c)}
+                                  className="text-left text-footnote bg-control-background border border-separator rounded-md px-2 py-1 hover:border-tint transition-colors"
+                                >
+                                  &#x201C;{c.quote}&#x201D;
+                                </button>
+                              );
+                            }
                             return (
-                              <button
+                              <span
                                 key={i}
-                                type="button"
-                                onClick={() => onCitationClick(c)}
-                                className="text-left text-footnote bg-control-background border border-separator rounded-md px-2 py-1 hover:border-tint transition-colors"
+                                title="couldn't locate in transcript"
+                                className="text-left text-footnote bg-control-background border border-separator rounded-md px-2 py-1 text-label-tertiary cursor-help"
                               >
                                 &#x201C;{c.quote}&#x201D;
-                              </button>
+                              </span>
                             );
-                          }
-                          return (
-                            <span
-                              key={i}
-                              title="couldn't locate in transcript"
-                              className="text-left text-footnote bg-control-background border border-separator rounded-md px-2 py-1 text-label-tertiary cursor-help"
-                            >
-                              &#x201C;{c.quote}&#x201D;
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-            {thread.pending && (
-              <div className="text-footnote text-label-secondary">
-                {thread.streamingText ?? "Answering…"}
-              </div>
-            )}
-            {!thread.pending && (
-              <div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => submit(thread.id)}
-                  disabled={!canSend}
-                >
-                  Follow up
-                </Button>
-              </div>
-            )}
-          </li>
-        ))}
-      </ol>
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {thread.pending && (
+                <div className="text-footnote text-label-secondary">
+                  {thread.streamingText ?? "Answering…"}
+                </div>
+              )}
+              {!thread.pending && (
+                <div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => submit(thread.id)}
+                    disabled={!canSend}
+                  >
+                    Follow up
+                  </Button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      </div>
 
       <form
-        className="mt-auto flex gap-2"
+        className="px-4 py-3 border-t border-separator flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
