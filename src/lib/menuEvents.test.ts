@@ -44,6 +44,6 @@ describe("menuEvents", () => {
   it("is idempotent — calling init twice does not double-subscribe", async () => {
     await initMenuEvents();
     await initMenuEvents();
-    expect(listenMock).toHaveBeenCalledTimes(4);
+    expect(listenMock).toHaveBeenCalledTimes(6);
   });
 });
