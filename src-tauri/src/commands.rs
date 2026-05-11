@@ -1152,7 +1152,7 @@ pub fn cancel_model_download(
 
 // ── Storage commands ──────────────────────────────────────────────────────────
 
-use crate::storage::{self, AppSettings, Project, Recording, Store, Template};
+use crate::storage::{self, GlobalSettings, Project, Recording, Store, Template};
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -1175,7 +1175,6 @@ pub async fn list_projects(
 pub async fn create_project(
     store: tauri::State<'_, Arc<Store>>,
     name: String,
-    default_settings: AppSettings,
     template: Template,
 ) -> Result<Project, String> {
     let store = (*store).clone();
@@ -1188,11 +1187,12 @@ pub async fn create_project(
             created_at: now,
             updated_at: now,
             template,
-            default_settings,
             custom_instructions: String::new(),
+            language: None,
         };
         storage::projects::insert(&store, &p)?;
-        Ok::<Project, String>(p)
+        storage::projects::get(&store, &p.id)?
+            .ok_or_else(|| "project vanished after insert".to_string())
     })
     .await
     .map_err(|e| format!("join: {e}"))?
@@ -1266,7 +1266,6 @@ pub async fn create_recording(
     project_id: String,
     name: String,
     source_paths: Vec<String>,
-    settings: AppSettings,
 ) -> Result<Recording, String> {
     let store = (*store).clone();
     tokio::task::spawn_blocking(move || {
@@ -1279,7 +1278,6 @@ pub async fn create_recording(
             source_paths,
             created_at: now,
             updated_at: now,
-            settings,
             stages: vec![],
         };
         storage::recordings::insert(&store, &r)?;
@@ -1365,42 +1363,6 @@ pub async fn cancel_recording(
     }
 }
 
-// ── Save helpers ───────────────────────────────────────────────────────────
-
-/// Placeholder helper kept so the orchestrator has a symbol to import — the
-/// actual save step runs on the React side via file dialogs. No-op.
-pub async fn run_save_outputs() -> Result<(), String> {
-    Ok(())
-}
-
-/// Called by the UI after the user finishes picking save paths and writing
-/// the output files. Appends to the save stage's saved_paths and marks it
-/// completed.
-#[tauri::command]
-pub async fn record_saved_outputs(
-    store: tauri::State<'_, Arc<Store>>,
-    recording_id: String,
-    saved_paths: Vec<String>,
-) -> Result<(), String> {
-    let store = (*store).clone();
-    tokio::task::spawn_blocking(move || {
-        storage::stages::set_completed(
-            &store,
-            &recording_id,
-            storage::StageKind::Save,
-            storage::stages::CompletedOutput {
-                output: None,
-                model_used: None,
-                template_hash: None,
-                saved_paths: Some(saved_paths),
-                completed_at: now_ms(),
-            },
-        )
-    })
-    .await
-    .map_err(|e| format!("join: {e}"))?
-}
-
 #[tauri::command]
 pub fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
@@ -1481,6 +1443,44 @@ pub async fn stop_call_capture(
     })
     .await
     .map_err(|e| format!("join: {e}"))?
+}
+
+// ── Global settings commands ───────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_global_settings(
+    store: tauri::State<'_, Arc<Store>>,
+) -> Result<GlobalSettings, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::app_settings::get(&store))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn set_global_settings(
+    store: tauri::State<'_, Arc<Store>>,
+    app: tauri::AppHandle,
+    settings: GlobalSettings,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::app_settings::set(&store, &settings))
+        .await
+        .map_err(|e| format!("join: {e}"))??;
+    let _ = app.emit("global-settings-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("settings") {
+        w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("settings window not found".to_string())
+    }
 }
 
 #[cfg(test)]
