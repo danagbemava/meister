@@ -54,6 +54,25 @@
   --color-status-warning-rgb: 255 149 0;
   --color-status-error-rgb:   255 59 48;
   --color-status-info-rgb:    0 122 255;
+
+  /* Sidebar — Source List (slice #6.2) */
+  --sidebar-row-hover:        rgb(0 0 0 / 0.05);
+  --sidebar-row-selected:     rgb(var(--color-accent-rgb) / 1);
+  --sidebar-row-selected-text:#ffffff;
+  --sidebar-divider:          rgb(0 0 0 / 0.07);
+  --sidebar-section-label:    rgb(60 60 67 / 0.6);
+  --sidebar-search-bg:        rgb(0 0 0 / 0.04);
+  --sidebar-search-border:    rgb(0 0 0 / 0.08);
+
+  /* Folder color gradients (light — slightly desaturated) */
+  --folder-blue-from:   #7fbcff;
+  --folder-blue-to:     #4f99ee;
+  --folder-green-from:  #83df93;
+  --folder-green-to:    #46b85e;
+  --folder-purple-from: #d3aff7;
+  --folder-purple-to:   #a472e6;
+  --folder-orange-from: #ffce85;
+  --folder-orange-to:   #ff9d4a;
 }
 
 [data-appearance="dark"] {
@@ -100,6 +119,25 @@
   --color-status-warning-rgb: 255 159 10;
   --color-status-error-rgb:   255 69 58;
   --color-status-info-rgb:    10 132 255;
+
+  /* Sidebar — Source List (slice #6.2) */
+  --sidebar-row-hover:        rgb(255 255 255 / 0.06);
+  --sidebar-row-selected:     rgb(var(--color-accent-rgb) / 1);
+  --sidebar-row-selected-text:#ffffff;
+  --sidebar-divider:          rgb(255 255 255 / 0.07);
+  --sidebar-section-label:    rgb(255 255 255 / 0.55);
+  --sidebar-search-bg:        rgb(255 255 255 / 0.06);
+  --sidebar-search-border:    rgb(255 255 255 / 0.08);
+
+  /* Folder color gradients (dark) */
+  --folder-blue-from:   #6cb3ff;
+  --folder-blue-to:     #2e89ee;
+  --folder-green-from:  #6fdb84;
+  --folder-green-to:    #2fb14b;
+  --folder-purple-from: #c89bf5;
+  --folder-purple-to:   #9659e3;
+  --folder-orange-from: #ffc46f;
+  --folder-orange-to:   #ff8c2a;
 }
 
 [data-reduce-transparency="true"] {
@@ -107,7 +145,25 @@
   --color-sidebar-background-alpha:     1;
   --color-control-background-alpha:     1;
   --color-under-page-background-alpha:  1;
+
+  /* Sidebar — opaque-equivalent overrides */
+  --sidebar-row-hover:    rgb(255 255 255 / 0.10);
+  --sidebar-divider:      rgb(255 255 255 / 0.18);
+  --sidebar-search-bg:    rgb(255 255 255 / 0.10);
 }
+
+/* Sidebar folder glyph (slice #6.2) */
+.sidebar-folder {
+  display: inline-block;
+  width: 14px;
+  height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.sidebar-folder-blue   { background: linear-gradient(180deg, var(--folder-blue-from),   var(--folder-blue-to)); }
+.sidebar-folder-green  { background: linear-gradient(180deg, var(--folder-green-from),  var(--folder-green-to)); }
+.sidebar-folder-purple { background: linear-gradient(180deg, var(--folder-purple-from), var(--folder-purple-to)); }
+.sidebar-folder-orange { background: linear-gradient(180deg, var(--folder-orange-from), var(--folder-orange-to)); }
 
 /* Typography scale — Apple macOS HIG. Classes: text-{name}. */
 /* Tailwind reads these via fontSize entries; line-heights in the same var. */
