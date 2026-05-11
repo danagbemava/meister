@@ -287,3 +287,22 @@ pub fn set_sidebar_glass_enabled<R: Runtime>(
 ) -> Result<(), String> {
     Ok(())
 }
+
+#[tauri::command]
+pub fn report_sidebar_frame<R: Runtime>(
+    window: WebviewWindow<R>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    apply_or_update_sidebar_glass(&window, BrowserRect { x, y, width, height })
+}
+
+#[tauri::command]
+pub fn set_sidebar_glass_enabled_cmd<R: Runtime>(
+    window: WebviewWindow<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    set_sidebar_glass_enabled(&window, enabled)
+}

@@ -125,6 +125,20 @@ pub fn run() {
             }
             vibrancy::install_reduce_transparency_observer(app.handle().clone());
 
+            // Mirror reduce-transparency state into the sidebar glass view.
+            // When transparency is reduced, detach the glass so the webview's
+            // opaque-token fallback takes over; when it's restored, glass is
+            // re-attached on the next sidebar-frame report from the webview.
+            use tauri::Listener;
+            let app_for_listener = app.handle().clone();
+            app.handle()
+                .listen(vibrancy::REDUCE_TRANSPARENCY_CHANGED_EVENT, move |event| {
+                    let reduce: bool = serde_json::from_str(event.payload()).unwrap_or(false);
+                    if let Some(window) = app_for_listener.get_webview_window("main") {
+                        let _ = glass::set_sidebar_glass_enabled(&window, !reduce);
+                    }
+                });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -158,6 +172,8 @@ pub fn run() {
             accent::get_system_accent,
             vibrancy::get_reduce_transparency,
             vibrancy::is_vibrancy_active,
+            glass::report_sidebar_frame,
+            glass::set_sidebar_glass_enabled_cmd,
             orchestrator::run_recording,
             ask::ask_query,
             ask::cancel_ask,
