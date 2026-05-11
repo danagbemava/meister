@@ -3,6 +3,7 @@
 
 pub mod cancel;
 pub mod citations;
+pub mod keyword_shortlist;
 pub mod map_shortlist;
 pub mod prompts;
 pub mod single_shot;
