@@ -1,11 +1,11 @@
 export type OutputFormat = "md" | "txt" | "docx" | "pdf";
 
-export interface AppSettings {
+export interface GlobalSettings {
   ollamaUrl: string;
   model: string;
   whisperModel: string;
   language: string;
-  outputFormats: OutputFormat[];
+  defaultExportFormat: OutputFormat;
 }
 
 export type TemplateSource = "inline" | "file";
@@ -23,11 +23,11 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   template: Template;
-  defaultSettings: AppSettings;
   customInstructions?: string;
+  language?: string | null;
 }
 
-export type StageKind = "extract" | "transcribe" | "format" | "save";
+export type StageKind = "extract" | "transcribe" | "format";
 export type StageStatus = "pending" | "running" | "completed" | "failed";
 
 export interface StageRecord {
@@ -38,7 +38,6 @@ export interface StageRecord {
   modelUsed?: string | null;
   templateHash?: string | null;
   output?: string | null;
-  savedPaths?: string[] | null;
 }
 
 export interface Recording {
@@ -48,11 +47,10 @@ export interface Recording {
   sourcePaths: string[];
   createdAt: number;
   updatedAt: number;
-  settings: AppSettings;
   stages: StageRecord[];
 }
 
-export const STAGES: StageKind[] = ["extract", "transcribe", "format", "save"];
+export const STAGES: StageKind[] = ["extract", "transcribe", "format"];
 
 export function overallStatus(r: Recording): "new" | "in_progress" | "completed" | "failed" {
   if (r.stages.some((s) => s.status === "failed")) return "failed";
