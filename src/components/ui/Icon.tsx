@@ -18,6 +18,7 @@ import {
   Pencil,
   CaretRight,
   ChatCircle,
+  MagnifyingGlass,
   Folder,
   Waveform,
   Gear,
@@ -35,7 +36,7 @@ export type IconName =
   | "plus" | "x" | "check" | "pencil" | "chevron-right"
   | "folder" | "recording"
   | "gear" | "question" | "info"
-  | "sidebar" | "chat";
+  | "sidebar" | "chat" | "magnifying-glass";
 
 export type IconSize = "sm" | "md" | "lg";
 
@@ -65,6 +66,7 @@ const REGISTRY: Record<IconName, React.ComponentType<PhosphorIconProps>> = {
   info: Info,
   sidebar: SidebarSimple,
   chat: ChatCircle,
+  "magnifying-glass": MagnifyingGlass,
 };
 
 const SIZE_PX: Record<IconSize, number> = { sm: 14, md: 20, lg: 32 };

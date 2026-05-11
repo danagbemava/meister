@@ -9,7 +9,7 @@ const ALL_NAMES: IconName[] = [
   "plus", "x", "check", "pencil", "chevron-right",
   "folder", "recording",
   "gear", "question", "info",
-  "sidebar",
+  "sidebar", "chat", "magnifying-glass",
 ];
 
 describe("Icon", () => {
