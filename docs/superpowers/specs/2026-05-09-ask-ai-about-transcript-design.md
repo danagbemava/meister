@@ -138,9 +138,12 @@ Tokens stream to the frontend via `ask-progress { phase: "answer", chars }`.
 ### Path B — map-shortlist + reduce
 
 1. Split the transcript using the format pipeline's chunking helper (same chunk size and overlap).
-2. **Map pass.** For each chunk, a small JSON-mode call: `{"relevant": bool, "gist": "..."}`. Run sequentially — Ollama is single-tenant in practice and parallelism risks model swapping. Emit `ask-progress { phase: "search", chunk: { index, total } }` per chunk.
-3. **Reduce pass.** Concatenate the relevant chunks with `[chunk N]` separators, then call `/api/generate` with the same instruction prompt as path A. Stream output.
-4. **Zero relevant chunks** → return an explicit *"couldn't find anything about that in the transcript"* answer without a second call. Cheap, and avoids hallucinated answers on out-of-scope questions.
+2. **Keyword prefilter.** Score each chunk by lowercase-token overlap with the question (ignoring stopwords). Take the top `K = 5` chunks with score > 0. If no chunk overlaps the question at all, fall back to passing every chunk through the map pass. This step is a pure-Rust word-set intersection — no LLM call — and is essentially free at meeting-length scales.
+3. **Map pass.** For each chunk in the prefilter shortlist, a small JSON-mode call: `{"relevant": bool, "gist": "..."}`. Run with bounded concurrency `k = 3` (via `futures::stream::buffer_unordered`). With Ollama's default `OLLAMA_NUM_PARALLEL=1` the requests still serialize at the server, but the futures stay primed; with `OLLAMA_NUM_PARALLEL ≥ 3` the wall time drops near-linearly. Emit `ask-progress { phase: "search", chunk: { index, total } }` per chunk where `total` reflects the shortlist size (not the raw chunk count) so the UI counter matches actual calls.
+4. **Reduce pass.** Concatenate the relevant chunks with `[chunk N]` separators (N is the original chunk index, not the shortlist index, so the model sees consistent labels), then call `/api/generate` with the same instruction prompt as path A. Stream output.
+5. **Zero relevant chunks** → return an explicit *"couldn't find anything about that in the transcript"* answer without a second call. Cheap, and avoids hallucinated answers on out-of-scope questions.
+
+The keyword-prefilter + bounded-concurrency design replaces the original "sequential map over every chunk" approach. Rationale: that approach scaled linearly with transcript length, hitting 2+ minutes on a 10-chunk transcript with default Ollama. The prefilter caps LLM calls at K + 1 regardless of transcript length, and concurrency turns idle wait into parallel inference whenever the user has tuned Ollama. Quality risk (paraphrased questions whose keywords don't overlap the transcript) is mitigated by the fallback-to-all-chunks branch when the shortlist is empty.
 
 ### Cancellation
 
