@@ -1,11 +1,19 @@
-import { forwardRef, useImperativeHandle, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import type { Project, Recording } from "../types/storage";
-import { overallStatus } from "../types/storage";
 import { api } from "../api/storage";
 import type { Selection } from "../App";
-import { Button, Input, ContextMenu } from "./ui";
+import { Button, ContextMenu, Icon, Input } from "./ui";
+import { folderColorFor } from "../lib/folderColor";
 
 export interface SidebarHandle {
   beginNewProject: () => void;
@@ -21,10 +29,6 @@ interface Props {
   onPickFilesForProject: (projectId: string, paths: string[]) => void;
 }
 
-const AUDIO_VIDEO_EXTS = [
-  "mp4", "mov", "mkv", "avi", "mp3", "m4a", "wav", "ogg", "webm", "aac", "flac",
-];
-
 const DEFAULTS = {
   ollamaUrl: "http://localhost:11434",
   model: "gemma3",
@@ -32,6 +36,26 @@ const DEFAULTS = {
   language: "auto",
   outputFormats: ["md"] as const,
 };
+
+const EXPANDED_KEY = (projectId: string) => `sidebar-expanded-${projectId}`;
+
+function readExpanded(projectId: string): boolean {
+  try {
+    const v = localStorage.getItem(EXPANDED_KEY(projectId));
+    if (v === null) return true;
+    return v === "true";
+  } catch {
+    return true;
+  }
+}
+
+function writeExpanded(projectId: string, value: boolean): void {
+  try {
+    localStorage.setItem(EXPANDED_KEY(projectId), value ? "true" : "false");
+  } catch {
+    /* localStorage unavailable; not fatal */
+  }
+}
 
 const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   {
@@ -41,20 +65,27 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     onSelect,
     onProjectsChanged,
     onRecordingsChanged,
-    onPickFilesForProject,
+    onPickFilesForProject: _onPickFilesForProject,
   },
   ref,
 ) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [renamingProject, setRenamingProject] = useState<string | null>(null);
+  const [renamingRecording, setRenamingRecording] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [search, setSearch] = useState("");
+  const [expandedTick, setExpandedTick] = useState(0);
 
-  type RenameTarget =
-    | { kind: "project"; id: string; value: string }
-    | { kind: "recording"; id: string; value: string }
-    | null;
-
-  const [renaming, setRenaming] = useState<RenameTarget>(null);
+  const isExpanded = useCallback(
+    (projectId: string) => readExpanded(projectId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expandedTick],
+  );
+  const toggleExpanded = useCallback((projectId: string) => {
+    writeExpanded(projectId, !readExpanded(projectId));
+    setExpandedTick((n) => n + 1);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     beginNewProject: () => {
@@ -63,91 +94,126 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     },
   }));
 
-  const beginRenameProject = (p: Project) => {
-    setRenaming({ kind: "project", id: p.id, value: p.name });
-  };
+  // Frame reporting → Rust for the native glass view.
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = sidebarRef.current;
+    if (!el) return;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      try {
+        const maybe = invoke("report_sidebar_frame", {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+        }) as Promise<unknown> | undefined;
+        if (maybe && typeof (maybe as Promise<unknown>).catch === "function") {
+          (maybe as Promise<unknown>).catch(() => { /* command unavailable on non-macOS or before setup */ });
+        }
+      } catch {
+        /* command unavailable on non-macOS or before setup */
+      }
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    window.addEventListener("resize", report);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", report);
+    };
+  }, []);
 
-  const beginRenameRecording = (r: Recording) => {
-    setRenaming({ kind: "recording", id: r.id, value: r.name });
-  };
+  // Search filtering.
+  const filterText = search.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!filterText) {
+      return projects.map((p) => ({
+        project: p,
+        recordings: recordingsByProject[p.id] ?? [],
+        forceExpand: false,
+      }));
+    }
+    return projects
+      .map((p) => {
+        const recs = recordingsByProject[p.id] ?? [];
+        const projectMatches = p.name.toLowerCase().includes(filterText);
+        const matchingRecs = recs.filter((r) => r.name.toLowerCase().includes(filterText));
+        if (projectMatches) return { project: p, recordings: recs, forceExpand: false };
+        if (matchingRecs.length > 0) return { project: p, recordings: matchingRecs, forceExpand: true };
+        return null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [projects, recordingsByProject, filterText]);
 
-  const cancelRename = () => setRenaming(null);
-
-  const commitRename = async () => {
-    if (!renaming) return;
-    const trimmed = renaming.value.trim();
-    if (!trimmed) {
-      setRenaming(null);
+  const createProject = async () => {
+    const name = newName.trim();
+    if (!name) {
+      setCreating(false);
       return;
     }
-    if (renaming.kind === "project") {
-      const project = projects.find((p) => p.id === renaming.id);
-      if (project && trimmed !== project.name) {
-        await api.updateProject({ ...project, name: trimmed });
-        onProjectsChanged();
-      }
-    } else {
-      const all = Object.values(recordingsByProject).flat();
-      const rec = all.find((r) => r.id === renaming.id);
-      if (rec && trimmed !== rec.name) {
-        await api.updateRecording({ ...rec, name: trimmed });
-        onRecordingsChanged(rec.projectId);
-      }
-    }
-    setRenaming(null);
-  };
-
-  const deleteProject = async (p: Project) => {
-    const ok = await dialogConfirm(
-      `Delete project "${p.name}" and all its recordings?`,
-      { title: "Delete project", kind: "warning" },
+    await api.createProject(
+      name,
+      { ...DEFAULTS, outputFormats: [...DEFAULTS.outputFormats] },
+      { source: "inline", content: "", sourcePath: null },
     );
-    if (!ok) return;
-    await api.deleteProject(p.id);
-    if (selection.kind === "project" && selection.projectId === p.id) {
-      onSelect({ kind: "none" });
-    }
-    if (selection.kind === "recording" && selection.projectId === p.id) {
-      onSelect({ kind: "none" });
-    }
+    setCreating(false);
+    setNewName("");
     onProjectsChanged();
   };
 
-  const deleteRecording = async (r: Recording) => {
-    const ok = await dialogConfirm(`Delete recording "${r.name}"?`, {
+  const deleteProject = async (id: string, name: string) => {
+    const ok = await dialogConfirm(`Delete project "${name}"? Its recordings stay on disk.`, {
+      title: "Delete project",
+      kind: "warning",
+    });
+    if (!ok) return;
+    await api.deleteProject(id);
+    try { localStorage.removeItem(EXPANDED_KEY(id)); } catch { /* ignore */ }
+    onProjectsChanged();
+  };
+
+  const renameProject = async (id: string) => {
+    const newNameTrimmed = renameValue.trim();
+    if (!newNameTrimmed) {
+      setRenamingProject(null);
+      return;
+    }
+    const project = projects.find((p) => p.id === id);
+    if (!project) {
+      setRenamingProject(null);
+      return;
+    }
+    await api.updateProject({ ...project, name: newNameTrimmed });
+    setRenamingProject(null);
+    onProjectsChanged();
+  };
+
+  const deleteRecording = async (projectId: string, recordingId: string, name: string) => {
+    const ok = await dialogConfirm(`Delete recording "${name}"?`, {
       title: "Delete recording",
       kind: "warning",
     });
     if (!ok) return;
-    await api.deleteRecording(r.id);
-    if (selection.kind === "recording" && selection.recordingId === r.id) {
-      onSelect({ kind: "none" });
-    }
-    onRecordingsChanged(r.projectId);
+    await api.deleteRecording(recordingId);
+    onRecordingsChanged(projectId);
   };
 
-  const toggleExpand = (id: string) =>
-    setExpanded((e) => ({ ...e, [id]: !e[id] }));
-
-  const createProject = async () => {
-    const name = newName.trim();
-    if (!name) return;
-    const p = await api.createProject(
-      name,
-      {
-        ollamaUrl: DEFAULTS.ollamaUrl,
-        model: DEFAULTS.model,
-        whisperModel: DEFAULTS.whisperModel,
-        language: DEFAULTS.language,
-        outputFormats: [...DEFAULTS.outputFormats],
-      },
-      { source: "inline", content: "", sourcePath: null },
-    );
-    setNewName("");
-    setCreating(false);
-    onProjectsChanged();
-    onSelect({ kind: "project", projectId: p.id });
-    setExpanded((e) => ({ ...e, [p.id]: true }));
+  const renameRecording = async (projectId: string, recordingId: string) => {
+    const newNameTrimmed = renameValue.trim();
+    if (!newNameTrimmed) {
+      setRenamingRecording(null);
+      return;
+    }
+    const recording = (recordingsByProject[projectId] ?? []).find((r) => r.id === recordingId);
+    if (!recording) {
+      setRenamingRecording(null);
+      return;
+    }
+    await api.updateRecording({ ...recording, name: newNameTrimmed });
+    setRenamingRecording(null);
+    onRecordingsChanged(projectId);
   };
 
   const projectSelected = (id: string) =>
@@ -155,35 +221,59 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   const recordingSelected = (id: string) =>
     selection.kind === "recording" && selection.recordingId === id;
 
-  const handleAddRecording = async (e: React.MouseEvent, projectId: string) => {
-    e.stopPropagation();
-    const picked = await open({
-      multiple: true,
-      filters: [{ name: "Audio / Video", extensions: AUDIO_VIDEO_EXTS }],
-    });
-    if (!picked) return;
-    const list = Array.isArray(picked) ? picked : [picked];
-    if (list.length === 0) return;
-    onPickFilesForProject(projectId, list);
-  };
-
   return (
-    <aside className="w-60 shrink-0 rounded-xl bg-sidebar-background flex flex-col">
+    <aside
+      ref={sidebarRef}
+      className="w-60 shrink-0 rounded-xl flex flex-col bg-transparent"
+    >
       <div data-tauri-drag-region className="h-9 shrink-0" />
+
+      <div className="px-3 pb-2 shrink-0">
+        <div
+          className="flex items-center gap-2 h-8 px-2.5 rounded-lg"
+          style={{
+            background: "var(--sidebar-search-bg)",
+            border: "1px solid var(--sidebar-search-border)",
+          }}
+        >
+          <Icon name="magnifying-glass" size="sm" className="text-label-tertiary" />
+          <input
+            type="search"
+            aria-label="Search projects and recordings"
+            placeholder="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 bg-transparent outline-none text-callout text-label-primary placeholder:text-label-tertiary"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="text-label-tertiary hover:text-label-primary"
+            >
+              <Icon name="x" size="sm" />
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="flex-1 overflow-y-auto scrollable px-2 pb-1">
         <div className="flex items-center justify-between pl-2 pr-0.5 pt-1 pb-0.5">
-          <span className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider">
+          <span
+            className="text-caption-1 font-semibold uppercase"
+            style={{ color: "var(--sidebar-section-label)", letterSpacing: "0.6px" }}
+          >
             Projects
           </span>
           {!creating && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCreating(true)}
-              className="text-label-tertiary hover:text-label-primary"
+              onClick={() => { setCreating(true); setNewName(""); }}
               iconLeft="plus"
               aria-label="New project"
+              className="text-label-tertiary hover:text-label-primary"
             />
           )}
         </div>
@@ -197,18 +287,12 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") createProject();
+                if (e.key === "Enter") void createProject();
                 if (e.key === "Escape") { setCreating(false); setNewName(""); }
               }}
               placeholder="Project name"
             />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={createProject}
-              iconLeft="check"
-              aria-label="Create project"
-            />
+            <Button variant="primary" size="sm" onClick={createProject} iconLeft="check" aria-label="Create project" />
             <Button
               variant="ghost"
               size="sm"
@@ -219,145 +303,164 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
           </div>
         )}
 
-        {projects.length === 0 && (
-          <p className="text-footnote text-label-tertiary p-3">No projects yet.</p>
+        {projects.length === 0 && !creating && (
+          <div className="flex flex-col items-center gap-2 py-6">
+            <p className="text-footnote text-label-tertiary">No projects yet.</p>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => { setCreating(true); setNewName(""); }}
+            >
+              New project
+            </Button>
+          </div>
         )}
-        {projects.map((p) => {
-          const recs = recordingsByProject[p.id] ?? [];
-          const isExpanded = expanded[p.id] ?? true;
+
+        {filtered.map(({ project: p, recordings: recs, forceExpand }) => {
+          const expanded = forceExpand || isExpanded(p.id);
+          const folderClass = `sidebar-folder sidebar-folder-${folderColorFor(p.id)}`;
+          const isSel = projectSelected(p.id);
           return (
             <div key={p.id}>
               <ContextMenu>
                 <ContextMenu.Trigger asChild>
                   <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
-                      onSelect({ kind: "project", projectId: p.id });
-                      toggleExpand(p.id);
+                      void onSelect({ kind: "project", projectId: p.id });
+                      toggleExpanded(p.id);
                     }}
-                    className={`w-full text-left px-1.5 py-1.5 rounded-md flex items-center gap-1 text-body cursor-pointer group
-                      ${projectSelected(p.id)
-                        ? "bg-accent/10 text-accent"
-                        : "hover:bg-fill-tertiary text-label-primary"}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        void onSelect({ kind: "project", projectId: p.id });
+                        toggleExpanded(p.id);
+                      }
+                    }}
+                    aria-label={`${p.name}, project, ${recs.length} recording${recs.length === 1 ? "" : "s"}`}
+                    aria-current={isSel ? "page" : undefined}
+                    aria-expanded={expanded}
+                    className="group mx-2 my-px h-9 px-2.5 rounded-md flex items-center gap-2 text-body cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    style={
+                      isSel
+                        ? { background: "var(--sidebar-row-selected)", color: "var(--sidebar-row-selected-text)" }
+                        : undefined
+                    }
+                    onMouseEnter={(e) => {
+                      if (!isSel) e.currentTarget.style.background = "var(--sidebar-row-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSel) e.currentTarget.style.background = "";
+                    }}
                   >
-                    <span className="text-label-tertiary text-footnote w-3">{isExpanded ? "▾" : "▸"}</span>
-                    {renaming?.kind === "project" && renaming.id === p.id ? (
+                    <span
+                      aria-hidden
+                      className="inline-block w-2.5 transition-transform"
+                      style={{
+                        transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                        color: isSel ? "var(--sidebar-row-selected-text)" : "var(--color-label-tertiary)",
+                      }}
+                    >
+                      ›
+                    </span>
+                    <span className={folderClass} aria-hidden />
+                    {renamingProject === p.id ? (
                       <Input
                         autoFocus
                         size="sm"
-                        value={renaming.value}
-                        onChange={(e) =>
-                          setRenaming({ kind: "project", id: p.id, value: e.target.value })
-                        }
-                        onBlur={commitRename}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            commitRename();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            cancelRename();
-                          }
-                        }}
+                        className="flex-1 h-6 -my-1"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex-1"
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === "Enter") void renameProject(p.id);
+                          if (e.key === "Escape") setRenamingProject(null);
+                        }}
+                        onBlur={() => void renameProject(p.id)}
                       />
                     ) : (
-                      <span className="truncate flex-1">{p.name}</span>
+                      <span className="flex-1 truncate font-medium">{p.name}</span>
                     )}
-                    <button
-                      onClick={(e) => handleAddRecording(e, p.id)}
-                      className="text-label-tertiary hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0 px-1"
-                      title="Add a new recording"
-                    >
-                      +
-                    </button>
                   </div>
                 </ContextMenu.Trigger>
                 <ContextMenu.Content>
-                  <ContextMenu.Item onSelect={() => beginRenameProject(p)}>
+                  <ContextMenu.Item onSelect={() => { setRenameValue(p.name); setRenamingProject(p.id); }}>
                     Rename
                   </ContextMenu.Item>
-                  <ContextMenu.Separator />
-                  <ContextMenu.Item
-                    variant="destructive"
-                    onSelect={() => deleteProject(p)}
-                  >
+                  <ContextMenu.Item onSelect={() => void deleteProject(p.id, p.name)}>
                     Delete
                   </ContextMenu.Item>
                 </ContextMenu.Content>
               </ContextMenu>
-              {isExpanded && recs.map((r) => (
-                <ContextMenu key={r.id}>
-                  <ContextMenu.Trigger asChild>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() =>
-                        onSelect({
-                          kind: "recording",
-                          projectId: p.id,
-                          recordingId: r.id,
-                        })
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelect({
-                            kind: "recording",
-                            projectId: p.id,
-                            recordingId: r.id,
-                          });
-                        }
-                      }}
-                      className={`w-full text-left pl-6 pr-1.5 py-1 rounded-md flex items-center gap-1.5 text-body cursor-pointer
-                        ${recordingSelected(r.id)
-                          ? "bg-accent/10 text-accent"
-                          : "hover:bg-fill-tertiary text-label-secondary"}`}
-                    >
-                      <StatusDot status={overallStatus(r)} />
-                      {renaming?.kind === "recording" && renaming.id === r.id ? (
-                        <Input
-                          autoFocus
-                          size="sm"
-                          value={renaming.value}
-                          onChange={(e) =>
-                            setRenaming({ kind: "recording", id: r.id, value: e.target.value })
+
+              {expanded && recs.map((rec) => {
+                const recSel = recordingSelected(rec.id);
+                return (
+                  <ContextMenu key={rec.id}>
+                    <ContextMenu.Trigger asChild>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => void onSelect({ kind: "recording", projectId: p.id, recordingId: rec.id })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void onSelect({ kind: "recording", projectId: p.id, recordingId: rec.id });
                           }
-                          onBlur={commitRename}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              commitRename();
-                            } else if (e.key === "Escape") {
-                              e.preventDefault();
-                              cancelRename();
-                            }
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1"
+                        }}
+                        aria-label={`${rec.name}, recording`}
+                        aria-current={recSel ? "page" : undefined}
+                        className="mx-2 my-px h-[34px] pl-[30px] pr-2.5 rounded-md flex items-center gap-2 text-body cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        style={
+                          recSel
+                            ? { background: "var(--sidebar-row-selected)", color: "var(--sidebar-row-selected-text)" }
+                            : undefined
+                        }
+                        onMouseEnter={(e) => {
+                          if (!recSel) e.currentTarget.style.background = "var(--sidebar-row-hover)";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!recSel) e.currentTarget.style.background = "";
+                        }}
+                      >
+                        <Icon
+                          name="recording"
+                          size="sm"
+                          className={recSel ? "" : "text-label-tertiary"}
                         />
-                      ) : (
-                        <span className="truncate flex-1">{r.name}</span>
-                      )}
-                    </div>
-                  </ContextMenu.Trigger>
-                  <ContextMenu.Content>
-                    <ContextMenu.Item onSelect={() => beginRenameRecording(r)}>
-                      Rename
-                    </ContextMenu.Item>
-                    <ContextMenu.Separator />
-                    <ContextMenu.Item
-                      variant="destructive"
-                      onSelect={() => deleteRecording(r)}
-                    >
-                      Delete
-                    </ContextMenu.Item>
-                  </ContextMenu.Content>
-                </ContextMenu>
-              ))}
-              {isExpanded && recs.length === 0 && (
-                <p className="pl-7 py-1 text-footnote text-label-tertiary">No recordings</p>
-              )}
+                        {renamingRecording === rec.id ? (
+                          <Input
+                            autoFocus
+                            size="sm"
+                            className="flex-1 h-6 -my-1"
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === "Enter") void renameRecording(p.id, rec.id);
+                              if (e.key === "Escape") setRenamingRecording(null);
+                            }}
+                            onBlur={() => void renameRecording(p.id, rec.id)}
+                          />
+                        ) : (
+                          <span className="flex-1 truncate">{rec.name}</span>
+                        )}
+                      </div>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Content>
+                      <ContextMenu.Item onSelect={() => { setRenameValue(rec.name); setRenamingRecording(rec.id); }}>
+                        Rename
+                      </ContextMenu.Item>
+                      <ContextMenu.Item onSelect={() => void deleteRecording(p.id, rec.id, rec.name)}>
+                        Delete
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu>
+                );
+              })}
             </div>
           );
         })}
@@ -367,12 +470,3 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
 });
 
 export default Sidebar;
-
-function StatusDot({ status }: { status: "new" | "in_progress" | "completed" | "failed" }) {
-  const color =
-    status === "failed" ? "bg-status-error"
-    : status === "completed" ? "bg-status-success"
-    : status === "in_progress" ? "bg-accent"
-    : "bg-fill-tertiary";
-  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${color}`} />;
-}
