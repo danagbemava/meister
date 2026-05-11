@@ -1,11 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { save as saveDialog, open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
+import { open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import AskPanel from "./AskPanel";
-import SettingsForm from "./SettingsForm";
 import { Button, Icon, Input, Toolbar } from "./ui";
 import { api } from "../api/storage";
 import {
@@ -14,9 +13,12 @@ import {
   type StageRecord,
   type StageKind,
 } from "../types/storage";
+import { exportRecording } from "../lib/exportRecording";
+import { useGlobalSettings } from "../lib/useGlobalSettings";
 
 export interface RecordingViewHandle {
   runPipeline: () => void;
+  exportFile: () => void;
 }
 
 interface Props {
@@ -25,7 +27,7 @@ interface Props {
   onRecordingDeleted: () => void;
 }
 
-const STAGE_ORDER: StageKind[] = ["extract", "transcribe", "format", "save"];
+const STAGE_ORDER: StageKind[] = ["extract", "transcribe", "format"];
 
 const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingView(
   { recordingId, onRecordingChanged, onRecordingDeleted },
@@ -49,6 +51,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const [highlightRange, setHighlightRange] = useState<
     { start: number; end: number; nonce: number } | undefined
   >(undefined);
+
+  const { settings: globalSettings } = useGlobalSettings();
 
   useEffect(() => {
     if (!rec) return;
@@ -113,10 +117,11 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   }, [recordingId, reload]);
 
   const runRef = useRef<() => void>(() => {});
+  const exportFlowRef = useRef<() => void>(() => {});
+
   useImperativeHandle(ref, () => ({
-    runPipeline: () => {
-      runRef.current();
-    },
+    runPipeline: () => { runRef.current(); },
+    exportFile: () => { exportFlowRef.current(); },
   }));
 
   const hasTranscript =
@@ -139,17 +144,40 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     setHighlightRange(undefined);
   }, [recordingId]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        exportFlowRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>
     rec.stages.find((s) => s.stage === k);
   const transcript = stageOf("transcribe")?.output ?? "";
   const formatted = stageOf("format")?.output ?? "";
-  const savedPaths = stageOf("save")?.savedPaths ?? [];
   const anyFailed = rec.stages.some((s) => s.status === "failed");
   const allCompleted = rec.stages.every((s) => s.status === "completed");
   const backendRunning = rec.stages.some((s) => s.status === "running");
   const canRun = !running && !backendRunning && !allCompleted; // re-run happens via Start over + Run
+
+  const exportFlow = async () => {
+    if (!rec || !globalSettings) return;
+    const fmtOutput = rec.stages.find((s) => s.stage === "format")?.output ?? "";
+    if (!fmtOutput) return;
+    await exportRecording({
+      formatted: fmtOutput,
+      recordingName: rec.name,
+      defaultFormat: globalSettings.defaultExportFormat,
+    });
+  };
+
+  exportFlowRef.current = () => { void exportFlow(); };
 
   const run = async () => {
     setRunning(true);
@@ -157,15 +185,6 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     setFormatProgress(null);
     try {
       await api.runRecording(recordingId);
-      await reload();
-      // If save stage is "completed" with empty savedPaths, ask the user to pick paths.
-      const updated = await api.getRecording(recordingId);
-      if (updated) {
-        const s = updated.stages.find((x) => x.stage === "save");
-        if (s && s.status === "completed" && (s.savedPaths ?? []).length === 0) {
-          await runSaveFlow(updated);
-        }
-      }
       await reload();
     } catch (err) {
       console.error("run_recording failed:", err);
@@ -178,32 +197,6 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   runRef.current = () => {
     if (canRun) run();
-  };
-
-  const runSaveFlow = async (r: Recording) => {
-    const formatted = r.stages.find((s) => s.stage === "format")?.output ?? "";
-    const paths: string[] = [];
-    for (const fmt of r.settings.outputFormats) {
-      const defaultName = `${r.name}.${fmt}`;
-      const dest = await saveDialog({
-        defaultPath: defaultName,
-        filters: [{ name: fmt.toUpperCase(), extensions: [fmt] }],
-      });
-      if (!dest) continue;
-      if (fmt === "md" || fmt === "txt") {
-        await invoke("save_text_file", { content: formatted, path: dest });
-        paths.push(dest);
-      } else if (fmt === "docx") {
-        const bytes = await generateDocx(formatted);
-        await invoke("save_binary_file", { bytes: Array.from(bytes), path: dest });
-        paths.push(dest);
-      } else if (fmt === "pdf") {
-        const bytes = await generatePdf(formatted);
-        await invoke("save_binary_file", { bytes: Array.from(bytes), path: dest });
-        paths.push(dest);
-      }
-    }
-    await api.recordSavedOutputs(r.id, paths);
   };
 
   const startOver = async () => {
@@ -309,9 +302,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           {STAGE_ORDER.map((k) => {
             const s = stageOf(k)!;
             const subtitle =
-              k === "transcribe" ? `model: ${rec.settings.whisperModel}`
-              : k === "format" ? `model: ${rec.settings.model}`
-              : k === "save" ? `formats: ${rec.settings.outputFormats.join(", ")}`
+              k === "transcribe" ? `model: ${globalSettings?.whisperModel ?? "?"}`
+              : k === "format" ? `model: ${globalSettings?.model ?? "?"}`
               : undefined;
             const progress =
               s.status === "running" && k === "transcribe" ? transcribePct
@@ -329,35 +321,11 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           })}
         </div>
 
-        <details className="bg-control-background rounded-xl p-4">
-          <summary className="cursor-pointer text-body text-label-secondary">Recording settings</summary>
-          <div className="mt-4 flex flex-col gap-3">
-            {(() => {
-              const warning = completedStageInvalidation(rec);
-              return warning ? (
-                <p className="text-footnote bg-status-warning/10 border border-status-warning/20 text-status-warning rounded px-3 py-2">
-                  {warning}
-                </p>
-              ) : null;
-            })()}
-            <SettingsForm
-              settings={rec.settings}
-              onChange={async (settings) => {
-                const next = { ...rec, settings };
-                setRec(next);
-                await api.updateRecording(next);
-                onRecordingChanged();
-              }}
-            />
-          </div>
-        </details>
-
         <div className={askOpen ? "flex gap-4" : ""}>
           <div className="flex-1">
             <OutputPreview
               transcript={transcript}
               formatted={formatted}
-              savedPaths={savedPaths}
               highlightRange={highlightRange}
             />
           </div>
@@ -416,6 +384,15 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           <Button
             variant="secondary"
             size="md"
+            disabled={!formatted}
+            title="Export the formatted output to a file (⌘E)"
+            onClick={() => void exportFlow()}
+          >
+            Export…
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
             disabled={!hasTranscript}
             title={hasTranscript ? "Ask about this transcript (⌘K)" : "Transcribe first"}
             onClick={() => setAskOpen((v) => !v)}
@@ -453,100 +430,3 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 });
 
 export default RecordingView;
-
-// ── Output generators (copied verbatim from old App.tsx) ─────────────────────
-
-async function generateDocx(markdown: string): Promise<Uint8Array> {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import("docx");
-  const lines = markdown.split("\n");
-  const children = lines.map((line) => {
-    if (line.startsWith("### ")) {
-      return new Paragraph({ text: line.slice(4), heading: HeadingLevel.HEADING_3 });
-    } else if (line.startsWith("## ")) {
-      return new Paragraph({ text: line.slice(3), heading: HeadingLevel.HEADING_2 });
-    } else if (line.startsWith("# ")) {
-      return new Paragraph({ text: line.slice(2), heading: HeadingLevel.HEADING_1 });
-    } else if (line.startsWith("**") && line.endsWith("**") && line.length > 4) {
-      return new Paragraph({ children: [new TextRun({ text: line.slice(2, -2), bold: true })] });
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      return new Paragraph({ text: line.slice(2), bullet: { level: 0 } });
-    } else if (line.trim() === "") {
-      return new Paragraph({ text: "" });
-    } else {
-      return new Paragraph({ text: line });
-    }
-  });
-  const doc = new Document({ sections: [{ properties: {}, children }] });
-  const blob = await Packer.toBlob(doc);
-  const ab = await blob.arrayBuffer();
-  return new Uint8Array(ab);
-}
-
-async function generatePdf(markdown: string): Promise<Uint8Array> {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 60;
-  const maxWidth = pageWidth - margin * 2;
-  let y = 80;
-  const lines = markdown.split("\n");
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (y > doc.internal.pageSize.getHeight() - 60) {
-      doc.addPage();
-      y = 60;
-    }
-    if (line.startsWith("# ")) {
-      doc.setFontSize(20).setFont("helvetica", "bold");
-      doc.text(line.slice(2), margin, y); y += 28;
-    } else if (line.startsWith("## ")) {
-      doc.setFontSize(16).setFont("helvetica", "bold");
-      doc.text(line.slice(3), margin, y); y += 22;
-    } else if (line.startsWith("### ")) {
-      doc.setFontSize(13).setFont("helvetica", "bold");
-      doc.text(line.slice(4), margin, y); y += 18;
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      doc.setFontSize(11).setFont("helvetica", "normal");
-      const wrapped = doc.splitTextToSize(`• ${line.slice(2)}`, maxWidth - 12);
-      doc.text(wrapped, margin + 8, y); y += wrapped.length * 14 + 2;
-    } else if (line.trim() === "") {
-      y += 8;
-    } else {
-      doc.setFontSize(11).setFont("helvetica", "normal");
-      const wrapped = doc.splitTextToSize(line, maxWidth);
-      doc.text(wrapped, margin, y); y += wrapped.length * 14 + 2;
-    }
-  }
-  return new Uint8Array(doc.output("arraybuffer") as ArrayBuffer);
-}
-
-function completedStageInvalidation(r: Recording): string | null {
-  const affected: string[] = [];
-  const stage = (k: StageKind) => r.stages.find((s) => s.stage === k);
-
-  const t = stage("transcribe");
-  if (t?.status === "completed") {
-    const encoded = `${r.settings.whisperModel}@${r.settings.language}`;
-    if (t.modelUsed !== encoded) affected.push("transcribe");
-  }
-
-  const f = stage("format");
-  if (f?.status === "completed" && f.modelUsed !== r.settings.model) {
-    affected.push("format");
-  }
-
-  const s = stage("save");
-  if (s?.status === "completed") {
-    const saved = (s.savedPaths ?? []).map((p) => p.split(".").pop() ?? "");
-    const want = [...r.settings.outputFormats].sort().join(",");
-    const have = [...new Set(saved)].sort().join(",");
-    if (want !== have) affected.push("save");
-  }
-
-  if (affected.length === 0) return null;
-  const downstream = affected.includes("transcribe")
-    ? " (+ format, save)"
-    : affected.includes("format") ? " (+ save)"
-    : "";
-  return `Changing settings will re-run: ${affected.join(", ")}${downstream} on next Run.`;
-}
