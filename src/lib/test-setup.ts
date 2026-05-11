@@ -29,3 +29,13 @@ if (!window.matchMedia) {
       dispatchEvent: () => false,
     }) as MediaQueryList;
 }
+
+// jsdom doesn't ship ResizeObserver; provide a no-op stub so components
+// that observe element size (Sidebar's frame-reporting effect) don't crash.
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
