@@ -89,10 +89,7 @@ fn migrate_v2_to_v3(conn: &Connection) -> Result<(), String> {
 }
 
 fn migrate_v3_to_v4(conn: &Connection) -> Result<(), String> {
-    let tx_started = conn
-        .execute_batch("BEGIN;")
-        .map_err(|e| format!("begin v4: {e}"))?;
-    let _ = tx_started;
+    conn.execute_batch("BEGIN;").map_err(|e| format!("begin v4: {e}"))?;
 
     // 1) Singleton app_settings table.
     conn.execute_batch(
