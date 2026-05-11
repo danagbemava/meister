@@ -435,3 +435,137 @@ fn cleanup_orphaned_captures_ignores_referenced_files_across_many_recordings() {
         assert!(p.exists());
     }
 }
+
+#[test]
+fn migration_v3_to_v4_seeds_app_settings_and_drops_legacy_columns() {
+    use rusqlite::Connection;
+
+    let conn = Connection::open_in_memory().expect("open db");
+    // Materialize the v3 schema directly (without calling migrate, which now
+    // goes all the way to v4 and drops the columns we need to seed from).
+    conn.execute_batch(r#"
+        CREATE TABLE projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            template_source TEXT NOT NULL,
+            template_content TEXT NOT NULL,
+            template_source_path TEXT,
+            default_settings TEXT NOT NULL,
+            template_match_style INTEGER NOT NULL DEFAULT 0,
+            custom_instructions TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE recordings (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            source_paths TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            settings TEXT NOT NULL
+        );
+        CREATE TABLE stages (
+            recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+            stage TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error TEXT,
+            completed_at INTEGER,
+            model_used TEXT,
+            template_hash TEXT,
+            output TEXT,
+            saved_paths TEXT,
+            PRIMARY KEY (recording_id, stage)
+        );
+        PRAGMA user_version = 3;
+    "#).unwrap();
+
+    // Insert a project with default_settings JSON containing an outputFormats array.
+    let default_settings = serde_json::json!({
+        "ollamaUrl": "http://localhost:11434",
+        "model": "gemma3",
+        "whisperModel": "small",
+        "language": "de",
+        "outputFormats": ["docx", "pdf"]
+    });
+    conn.execute(
+        "INSERT INTO projects \
+         (id, name, created_at, updated_at, template_source, template_content, \
+          template_source_path, default_settings, template_match_style, custom_instructions) \
+         VALUES ('p1','Proj',1,100,'inline','','',?1,0,'')",
+        rusqlite::params![default_settings.to_string()],
+    ).unwrap();
+
+    // Insert a recording with a (now-irrelevant) settings JSON.
+    conn.execute(
+        "INSERT INTO recordings \
+         (id, project_id, name, source_paths, created_at, updated_at, settings) \
+         VALUES ('r1','p1','Rec','[\"/x.mp3\"]',1,1,'{}')",
+        [],
+    ).unwrap();
+
+    // Insert a save-stage row that the migration should delete.
+    conn.execute(
+        "INSERT INTO stages (recording_id, stage, status) VALUES ('r1','save','completed')",
+        [],
+    ).unwrap();
+
+    // Run the migration framework forward to v4.
+    meister_lib::storage::schema::migrate(&conn).unwrap();
+
+    let v: i32 = conn.query_row("PRAGMA user_version;", [], |r| r.get(0)).unwrap();
+    assert_eq!(v, 4);
+
+    // app_settings exists and has exactly one row seeded from the project.
+    let (ollama, model, whisper, lang, fmt): (String, String, String, String, String) = conn
+        .query_row(
+            "SELECT ollama_url, model, whisper_model, language, default_export_format \
+             FROM app_settings",
+            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        ).unwrap();
+    assert_eq!(ollama, "http://localhost:11434");
+    assert_eq!(model, "gemma3");
+    assert_eq!(whisper, "small");
+    assert_eq!(lang, "de");
+    assert_eq!(fmt, "docx");  // first entry of outputFormats
+
+    // projects has new `language` column.
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(projects);").unwrap()
+        .query_map([], |r| r.get::<_, String>(1)).unwrap()
+        .filter_map(Result::ok).collect();
+    assert!(cols.iter().any(|c| c == "language"));
+    assert!(!cols.iter().any(|c| c == "default_settings"));
+
+    // recordings dropped settings.
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(recordings);").unwrap()
+        .query_map([], |r| r.get::<_, String>(1)).unwrap()
+        .filter_map(Result::ok).collect();
+    assert!(!cols.iter().any(|c| c == "settings"));
+
+    // save-stage rows are gone.
+    let n: i64 = conn
+        .query_row("SELECT count(*) FROM stages WHERE stage = 'save'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+#[test]
+fn migration_v3_to_v4_seeds_defaults_when_no_projects() {
+    use rusqlite::Connection;
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA user_version = 0;").unwrap();
+    meister_lib::storage::schema::migrate(&conn).unwrap();
+
+    let (ollama, whisper, lang, fmt): (String, String, String, String) = conn
+        .query_row(
+            "SELECT ollama_url, whisper_model, language, default_export_format \
+             FROM app_settings",
+            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        ).unwrap();
+    assert_eq!(ollama, "http://localhost:11434");
+    assert_eq!(whisper, "base");
+    assert_eq!(lang, "auto");
+    assert_eq!(fmt, "md");
+}
