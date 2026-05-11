@@ -52,6 +52,7 @@ objc2-foundation = { version = "0.2", features = [
     "NSNotification",
     "NSObject",
     "NSOperation",
+    "NSProcessInfo",
     "NSString",
     "block2",
 ] }
