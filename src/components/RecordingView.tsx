@@ -261,12 +261,12 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
         </Button>
       </Toolbar>
       <div className="flex-1 min-h-0 flex">
-      <div className="flex-1 min-w-0 overflow-y-auto scrollable p-8 flex flex-col gap-6">
-        <div className="flex flex-col gap-1">
+      <div className="flex-1 min-w-0 min-h-0 p-8 flex flex-col gap-6">
+        <div className="shrink-0 flex flex-col gap-1">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
           </span>
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-1 max-h-[30vh] overflow-y-auto scrollable">
             {rec.sourcePaths.map((p, idx) => {
               const missing = !!missingByPath[p];
               return (
@@ -299,7 +299,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           </ul>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="shrink-0 flex flex-col gap-2">
           {STAGE_ORDER.map((k) => {
             const s = stageOf(k)!;
             const subtitle =
@@ -329,7 +329,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
         />
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
-          <div className="text-footnote text-label-tertiary space-y-1">
+          <div className="shrink-0 text-footnote text-label-tertiary space-y-1">
             {formatProgress.phase === "single" && (
               <p>Formatting… {formatProgress.chars.toLocaleString()} chars</p>
             )}

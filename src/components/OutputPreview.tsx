@@ -69,7 +69,7 @@ export default function OutputPreview({
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex-1 min-h-0 flex flex-col gap-3">
       <SegmentedControl
         size="sm"
         value={tab}
@@ -83,7 +83,7 @@ export default function OutputPreview({
           Transcript
         </SegmentedControl.Item>
       </SegmentedControl>
-      <pre className="bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap max-h-96 overflow-y-auto scrollable">
+      <pre className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
         {tab === "formatted" ? (formatted ?? "") : renderTranscript()}
       </pre>
     </div>
