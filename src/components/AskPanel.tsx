@@ -39,7 +39,7 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
       aria-label="Ask AI"
       className="h-full flex flex-col"
     >
-      <header className="flex items-center justify-between px-4 py-3 border-b border-separator">
+      <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-separator">
         <h3 className="text-headline font-semibold">Ask</h3>
         <div className="flex items-center gap-2">
           {threads.length > 0 && (
@@ -137,7 +137,7 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
       </div>
 
       <form
-        className="px-4 py-3 border-t border-separator flex gap-2"
+        className="shrink-0 px-4 py-3 border-t border-separator flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();

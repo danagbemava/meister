@@ -212,7 +212,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   return (
     <aside
       ref={sidebarRef}
-      className="w-60 shrink-0 rounded-xl flex flex-col bg-transparent"
+      className="w-60 h-full shrink-0 rounded-xl flex flex-col bg-transparent"
     >
       <div data-tauri-drag-region className="h-9 shrink-0" />
 
