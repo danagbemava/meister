@@ -910,6 +910,13 @@ pub async fn run_format(
     custom_instructions: &str,
     cancel: Option<crate::cancellation::CancelToken>,
 ) -> Result<String, String> {
+    // No progress event for this long → fire the watchdog. The per-stream
+    // inactivity timer in `ollama_generate_stream` catches a single wedged
+    // stream; this catches wedges in the orchestration BETWEEN calls
+    // (e.g. between the last map and the reduce), which is invisible to
+    // the per-stream timer.
+    const FORMAT_STALL_TIMEOUT_SECS: i64 = 600;
+
     let cache_dir = app
         .path()
         .app_data_dir()
@@ -917,11 +924,44 @@ pub async fn run_format(
         .join("format-cache");
 
     let app_handle = app.clone();
+    let last_progress = Arc::new(std::sync::atomic::AtomicI64::new(now_ms()));
+    let watchdog_fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let lp_emit = last_progress.clone();
     let on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync> = Arc::new(move |p| {
+        lp_emit.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
         let _ = app_handle.emit("format-progress", p);
     });
 
-    run_format_core(
+    let watchdog_handle = cancel.as_ref().map(|c| {
+        let cancel_clone = c.clone();
+        let lp_watch = last_progress.clone();
+        let fired = watchdog_fired.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                if cancel_clone.is_cancelled() {
+                    return;
+                }
+                let elapsed_ms =
+                    now_ms() - lp_watch.load(std::sync::atomic::Ordering::Relaxed);
+                let elapsed_secs = elapsed_ms / 1000;
+                if elapsed_secs > FORMAT_STALL_TIMEOUT_SECS {
+                    fired.store(true, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!(
+                        "format watchdog: no progress for {elapsed_secs}s, cancelling",
+                    );
+                    cancel_clone.cancel();
+                    return;
+                }
+            }
+        })
+    });
+
+    let result = run_format_core(
         transcript,
         template_content,
         ollama_url,
@@ -932,7 +972,20 @@ pub async fn run_format(
         on_progress,
         cancel,
     )
-    .await
+    .await;
+
+    if let Some(h) = watchdog_handle {
+        h.abort();
+    }
+
+    if watchdog_fired.load(std::sync::atomic::Ordering::SeqCst) {
+        Err(format!(
+            "Format stalled — no progress for {} minutes. Likely Ollama wedged or the orchestrator hung between calls. Try restarting Ollama (pkill ollama && ollama serve) and re-running.",
+            FORMAT_STALL_TIMEOUT_SECS / 60,
+        ))
+    } else {
+        result
+    }
 }
 
 
