@@ -166,6 +166,7 @@ pub fn run() {
             commands::get_global_settings,
             commands::set_global_settings,
             commands::open_settings_window,
+            commands::set_format_output,
             commands::start_call_capture,
             commands::pause_call_capture,
             commands::resume_call_capture,

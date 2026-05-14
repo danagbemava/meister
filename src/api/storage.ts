@@ -39,6 +39,9 @@ export const api = {
 
   openSettingsWindow: () => invoke<void>("open_settings_window"),
 
+  setFormatOutput: (recordingId: string, output: string) =>
+    invoke<void>("set_format_output", { recordingId, output }),
+
   startCallCapture: async (includeMic: boolean) => {
     const raw = await invoke<{
       session_id: string;

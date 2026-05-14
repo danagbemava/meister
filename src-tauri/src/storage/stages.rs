@@ -11,6 +11,32 @@ pub struct CompletedOutput {
     pub completed_at: i64,
 }
 
+/// Replace just the `output` of a completed stage. Used when the user
+/// edits the formatted text in the UI before exporting; status / model_used /
+/// template_hash / completed_at stay as-is. Requires the stage to be in
+/// `completed` status — otherwise the call is a no-op and returns Err.
+pub fn set_output(
+    store: &Store,
+    recording_id: &str,
+    stage: StageKind,
+    output: &str,
+) -> Result<(), String> {
+    let conn = store.conn.lock().unwrap();
+    let n = conn.execute(
+        "UPDATE stages SET output = ?3 \
+         WHERE recording_id = ?1 AND stage = ?2 AND status = 'completed'",
+        params![recording_id, stage.as_str(), output],
+    )
+    .map_err(|e| format!("set_output: {e}"))?;
+    if n == 0 {
+        return Err(format!(
+            "stage not editable: recording={recording_id}, stage={}",
+            stage.as_str()
+        ));
+    }
+    Ok(())
+}
+
 pub fn set_running(store: &Store, recording_id: &str, stage: StageKind) -> Result<(), String> {
     let conn = store.conn.lock().unwrap();
     conn.execute(

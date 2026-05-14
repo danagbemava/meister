@@ -1536,6 +1536,20 @@ pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+pub async fn set_format_output(
+    state: tauri::State<'_, Arc<storage::Store>>,
+    recording_id: String,
+    output: String,
+) -> Result<(), String> {
+    let store = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        storage::stages::set_output(&store, &recording_id, storage::StageKind::Format, &output)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

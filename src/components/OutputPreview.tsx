@@ -5,12 +5,21 @@ interface Props {
   transcript?: string | null;
   formatted?: string | null;
   highlightRange?: { start: number; end: number; nonce?: number };
+  /** If provided, the formatted view becomes an editable textarea controlled
+   *  by the parent. Each keystroke fires this. The parent decides when to
+   *  persist (typically on blur). */
+  onFormattedChange?: (next: string) => void;
+  /** Hides the formatted-editing affordance when true (e.g. while the format
+   *  stage is still running). */
+  formattedReadOnly?: boolean;
 }
 
 export default function OutputPreview({
   transcript,
   formatted,
   highlightRange,
+  onFormattedChange,
+  formattedReadOnly,
 }: Props) {
   const has = (v?: string | null) => (v ?? "").length > 0;
   const hasFormatted = has(formatted);
@@ -83,9 +92,25 @@ export default function OutputPreview({
           Transcript
         </SegmentedControl.Item>
       </SegmentedControl>
-      <pre className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
-        {tab === "formatted" ? (formatted ?? "") : renderTranscript()}
-      </pre>
+      {tab === "formatted" ? (
+        onFormattedChange && !formattedReadOnly ? (
+          <textarea
+            value={formatted ?? ""}
+            onChange={(e) => onFormattedChange(e.target.value)}
+            spellCheck
+            className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable resize-none outline-none focus:border-tint"
+            aria-label="Formatted output"
+          />
+        ) : (
+          <pre className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
+            {formatted ?? ""}
+          </pre>
+        )
+      ) : (
+        <pre className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
+          {renderTranscript()}
+        </pre>
+      )}
     </div>
   );
 }

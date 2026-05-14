@@ -51,6 +51,10 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const [highlightRange, setHighlightRange] = useState<
     { start: number; end: number; nonce: number } | undefined
   >(undefined);
+  // null = adopt whatever the DB says. Becomes a string once the user
+  // starts editing the formatted output.
+  const [formattedDraft, setFormattedDraft] = useState<string | null>(null);
+  const persistTimerRef = useRef<number | null>(null);
 
   const { settings: globalSettings } = useGlobalSettings();
 
@@ -142,7 +146,44 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   useEffect(() => {
     setHighlightRange(undefined);
+    setFormattedDraft(null);
   }, [recordingId]);
+
+  // Adopt the DB value whenever it changes externally (re-run completes,
+  // app loads). User edits in `formattedDraft` are reconciled into the DB
+  // on a 500ms debounce; once the persist round-trips, dbFormatted will
+  // match the draft and the draft can be cleared so subsequent external
+  // updates win.
+  const dbFormattedForEffect =
+    rec?.stages.find((s) => s.stage === "format")?.output ?? "";
+  useEffect(() => {
+    setFormattedDraft((draft) =>
+      draft === null || draft === dbFormattedForEffect ? null : draft,
+    );
+  }, [dbFormattedForEffect]);
+
+  const onFormattedChange = useCallback(
+    (next: string) => {
+      setFormattedDraft(next);
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+      persistTimerRef.current = window.setTimeout(() => {
+        void api.setFormatOutput(recordingId, next).catch((err) => {
+          console.warn("setFormatOutput failed:", err);
+        });
+      }, 500);
+    },
+    [recordingId],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -160,7 +201,9 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const stageOf = (k: StageKind): StageRecord | undefined =>
     rec.stages.find((s) => s.stage === k);
   const transcript = stageOf("transcribe")?.output ?? "";
-  const formatted = stageOf("format")?.output ?? "";
+  const dbFormatted = stageOf("format")?.output ?? "";
+  const formatStatus = stageOf("format")?.status;
+  const formatted = formattedDraft ?? dbFormatted;
   const anyFailed = rec.stages.some((s) => s.status === "failed");
   const allCompleted = rec.stages.every((s) => s.status === "completed");
   const backendRunning = rec.stages.some((s) => s.status === "running");
@@ -168,10 +211,9 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   const exportFlow = async () => {
     if (!rec || !globalSettings) return;
-    const fmtOutput = rec.stages.find((s) => s.stage === "format")?.output ?? "";
-    if (!fmtOutput) return;
+    if (!formatted) return;
     await exportRecording({
-      formatted: fmtOutput,
+      formatted,
       recordingName: rec.name,
       defaultFormat: globalSettings.defaultExportFormat,
     });
@@ -326,6 +368,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           transcript={transcript}
           formatted={formatted}
           highlightRange={highlightRange}
+          onFormattedChange={onFormattedChange}
+          formattedReadOnly={formatStatus !== "completed"}
         />
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
