@@ -3,6 +3,7 @@ pub mod accent;
 pub mod ask;
 pub mod cancellation;
 pub mod capture;
+pub mod demo;
 pub mod glass;
 pub mod menu;
 pub mod orchestrator;
@@ -78,9 +79,17 @@ pub fn run() {
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
             // Storage: open DB, sweep interrupted `running` stage rows.
-            let db_path = app_data_dir.join("meister.db");
+            // In demo mode, a parallel database + captures dir is used so
+            // real user data is untouched while screenshots are taken.
+            let demo_active = demo::is_active(&app_data_dir);
+            let db_path = demo::db_path(&app_data_dir);
             let store = storage::Store::open(&db_path)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            if demo_active {
+                if let Err(e) = demo::seed_if_empty(&store, &bundled_dir, &app_data_dir) {
+                    eprintln!("demo: seed failed (non-fatal): {e}");
+                }
+            }
             let swept = storage::stages::mark_running_as_failed(
                 &store, "Interrupted (app closed during processing)",
             ).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
@@ -88,7 +97,7 @@ pub fn run() {
                 eprintln!("storage: marked {swept} interrupted stage(s) as failed");
             }
 
-            let captures_dir = app_data_dir.join("captures");
+            let captures_dir = demo::captures_dir(&app_data_dir);
             match storage::cleanup_orphaned_captures(&store, &captures_dir) {
                 Ok(n) if n > 0 => eprintln!("storage: removed {n} orphaned capture file(s)"),
                 Ok(_) => {}
@@ -111,6 +120,9 @@ pub fn run() {
 
             // Window vibrancy + reduce-transparency observer.
             if let Some(window) = app.get_webview_window("main") {
+                if demo_active {
+                    let _ = window.set_title("Meister (Demo)");
+                }
                 if let Err(e) = vibrancy::set_window_transparent(&window) {
                     eprintln!("vibrancy: set_window_transparent failed: {e}");
                     let _ = app.emit(vibrancy::VIBRANCY_UNAVAILABLE_EVENT, ());
@@ -167,6 +179,8 @@ pub fn run() {
             commands::set_global_settings,
             commands::open_settings_window,
             commands::set_format_output,
+            commands::is_demo_mode,
+            commands::set_demo_mode,
             commands::start_call_capture,
             commands::pause_call_capture,
             commands::resume_call_capture,

@@ -42,6 +42,11 @@ export const api = {
   setFormatOutput: (recordingId: string, output: string) =>
     invoke<void>("set_format_output", { recordingId, output }),
 
+  isDemoMode: () => invoke<boolean>("is_demo_mode"),
+
+  setDemoMode: (enabled: boolean) =>
+    invoke<void>("set_demo_mode", { enabled }),
+
   startCallCapture: async (includeMic: boolean) => {
     const raw = await invoke<{
       session_id: string;

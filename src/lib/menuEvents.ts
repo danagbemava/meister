@@ -6,7 +6,8 @@ export type MenuEventName =
   | "menu:run-pipeline"
   | "menu:toggle-sidebar"
   | "menu:settings"
-  | "menu:export";
+  | "menu:export"
+  | "menu:demo-mode";
 
 type Handler = () => void;
 
@@ -27,6 +28,7 @@ export async function initMenuEvents(): Promise<void> {
     "menu:toggle-sidebar",
     "menu:settings",
     "menu:export",
+    "menu:demo-mode",
   ];
   for (const ev of events) {
     try {

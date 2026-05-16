@@ -1537,6 +1537,31 @@ pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn is_demo_mode(app: tauri::AppHandle) -> Result<bool, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?;
+    Ok(crate::demo::is_active(&dir))
+}
+
+/// Flip demo mode on or off and immediately restart the app so the new
+/// database / captures directory take effect cleanly.
+#[tauri::command]
+pub fn set_demo_mode(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?;
+    if enabled {
+        crate::demo::enable(&dir)?;
+    } else {
+        crate::demo::disable(&dir)?;
+    }
+    app.restart();
+}
+
+#[tauri::command]
 pub async fn set_format_output(
     state: tauri::State<'_, Arc<storage::Store>>,
     recording_id: String,

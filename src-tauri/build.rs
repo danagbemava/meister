@@ -4,6 +4,12 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=scripts/fetch-base-model.sh");
     println!("cargo:rerun-if-changed=build.rs");
+    // Re-run when the active Xcode toolchain changes — otherwise an Xcode
+    // upgrade leaves a stale `-rpath` baked into the binary that points at
+    // a now-deleted `Xcode-X.Y.Z.app` path, producing dyld load failures
+    // for `libswift_Concurrency.dylib` at runtime.
+    println!("cargo:rerun-if-env-changed=DEVELOPER_DIR");
+    println!("cargo:rerun-if-changed=/var/db/xcode_select_link");
 
     if cfg!(target_os = "macos") {
         if let Some(dir) = find_swift_runtime_dir() {

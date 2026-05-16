@@ -2,11 +2,17 @@
 //! prefixed with `menu:` so the frontend can dispatch them.
 
 use tauri::menu::{
-    AboutMetadataBuilder, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+    AboutMetadataBuilder, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder,
+    PredefinedMenuItem, SubmenuBuilder,
 };
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let demo_active = app
+        .path()
+        .app_data_dir()
+        .map(|d| crate::demo::is_active(&d))
+        .unwrap_or(false);
     // App menu (Meister)
     let about_meta = AboutMetadataBuilder::new()
         .name(Some("Meister"))
@@ -71,9 +77,15 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .id("menu:toggle-sidebar")
         .accelerator("Control+CmdOrCtrl+S")
         .build(app)?;
+    let demo_mode = CheckMenuItemBuilder::new("Demo Mode")
+        .id("menu:demo-mode")
+        .checked(demo_active)
+        .build(app)?;
 
     let view_submenu = SubmenuBuilder::new(app, "View")
         .item(&toggle_sidebar)
+        .separator()
+        .item(&demo_mode)
         .build()?;
 
     // Recording (app-specific)
