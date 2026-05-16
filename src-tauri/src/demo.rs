@@ -19,6 +19,15 @@ pub fn is_active(app_data_dir: &Path) -> bool {
     app_data_dir.join(FLAG_FILE).exists()
 }
 
+/// Resolve the app data directory without relying on Tauri's `PathResolver`,
+/// which isn't ready inside the `.menu(...)` builder closure. Mirrors the
+/// macOS layout Tauri uses for our configured bundle identifier.
+pub fn app_data_dir_static() -> Option<PathBuf> {
+    std::env::var("HOME").ok().map(|h| {
+        PathBuf::from(h).join("Library/Application Support/com.meister.app")
+    })
+}
+
 pub fn db_path(app_data_dir: &Path) -> PathBuf {
     if is_active(app_data_dir) {
         app_data_dir.join("meister-demo.db")

@@ -5,12 +5,12 @@ use tauri::menu::{
     AboutMetadataBuilder, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder,
     PredefinedMenuItem, SubmenuBuilder,
 };
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let demo_active = app
-        .path()
-        .app_data_dir()
+    // `app.path()` isn't usable yet — Tauri's `PathResolver` state is set up
+    // after the menu builder runs. Resolve the app data dir statically.
+    let demo_active = crate::demo::app_data_dir_static()
         .map(|d| crate::demo::is_active(&d))
         .unwrap_or(false);
     // App menu (Meister)
