@@ -14,8 +14,13 @@ pub(crate) fn collapse_repetitions(segments: &[String]) -> Vec<String> {
     if segments.is_empty() {
         return Vec::new();
     }
-    let after_consecutive = collapse_consecutive_runs(segments);
-    collapse_by_recent_count(&after_consecutive)
+    // Pass 2 (`collapse_by_recent_count`) was removed: in real multi-speaker
+    // meetings, short acknowledgments ("yes", "okay", "thank you", "amen")
+    // naturally recur within any 10-segment window, and the predicate
+    // silently dropped legitimate conversation whenever Whisper happened to
+    // chunk those acknowledgments into short segments. Real Whisper lock-in
+    // loops are consecutive identical segments, which Pass 1 still catches.
+    collapse_consecutive_runs(segments)
 }
 
 /// Pass 1: collapse maximal runs of consecutive identical (normalized)
@@ -50,29 +55,6 @@ fn collapse_consecutive_runs(segments: &[String]) -> Vec<String> {
             out.push(segments[i].clone());
         }
         i += len;
-    }
-    out
-}
-
-/// Pass 2: drop segments whose normalized form has already appeared
-/// REPETITION_THRESHOLD times in the last RECENT_WINDOW segments.
-/// Catches period-2+ loops (A-B-A-B-A-B-…) that the consecutive-runs
-/// pass misses because no two adjacent segments are identical.
-fn collapse_by_recent_count(segments: &[String]) -> Vec<String> {
-    const RECENT_WINDOW: usize = 10;
-    use std::collections::VecDeque;
-    let mut out: Vec<String> = Vec::with_capacity(segments.len());
-    let mut history: VecDeque<String> = VecDeque::with_capacity(RECENT_WINDOW);
-    for seg in segments {
-        let n = normalize(seg);
-        let count = history.iter().filter(|h| *h == &n).count();
-        if count < REPETITION_THRESHOLD {
-            out.push(seg.clone());
-        }
-        history.push_back(n);
-        if history.len() > RECENT_WINDOW {
-            history.pop_front();
-        }
     }
     out
 }
@@ -236,39 +218,15 @@ mod tests {
     }
 
     #[test]
-    fn collapse_catches_period_2_alternation_loop() {
+    fn collapse_passes_through_period_2_alternation_untouched() {
+        // Pass 2 used to drop these — was removed in favor of preserving
+        // legit multi-speaker call-and-response. Pass 1 only catches
+        // CONSECUTIVE identical segments, so an A/B alternation is kept.
         let mut input: Vec<String> = Vec::new();
         for _ in 0..10 {
             input.push("A".to_string());
             input.push("B".to_string());
         }
-        let out = collapse_repetitions(&input);
-        // Pass 1 leaves alternation untouched (no consecutive dups); pass 2
-        // drops from the 4th occurrence of each normalized form, so first
-        // 3 A's and first 3 B's survive.
-        assert_eq!(out, segs(&["A", "B", "A", "B", "A", "B"]));
-    }
-
-    #[test]
-    fn collapse_catches_real_period_2_iron_rod_pair() {
-        let mut input: Vec<String> = Vec::new();
-        for _ in 0..12 {
-            input.push("And the iron rod and cement are growing up.".to_string());
-            input.push("So, earlier we flew this part.".to_string());
-        }
-        let out = collapse_repetitions(&input);
-        // 24 segments → 6 surviving (first 3 of each alternating form).
-        assert_eq!(out.len(), 6);
-        assert_eq!(out[0], "And the iron rod and cement are growing up.");
-        assert_eq!(out[1], "So, earlier we flew this part.");
-    }
-
-    #[test]
-    fn collapse_period_2_preserves_legit_short_alternation() {
-        // A six-element alternation is still at/under threshold (first
-        // 3 A's and first 3 B's = 6). Keep as-is. Real Q/A exchanges are
-        // rarely longer than this.
-        let input = segs(&["Yes.", "No.", "Yes.", "No.", "Yes.", "No."]);
         let out = collapse_repetitions(&input);
         assert_eq!(out, input);
     }
