@@ -262,10 +262,14 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
       { title: `Re-run ${label}`, kind: "warning" },
     );
     if (!ok) return;
-    await api.resetRecordingFrom(recordingId, stage);
+    // Transcribe deletes the extracted WAVs on success to reclaim disk, so
+    // a true "reset transcribe" would fail on missing input. Re-extract
+    // first (it's cheap — just ffmpeg on the source) so transcribe has
+    // fresh WAVs to chew on.
+    const resetFrom = stage === "transcribe" ? "extract" : "format";
+    await api.resetRecordingFrom(recordingId, resetFrom);
     await reload();
     onRecordingChanged();
-    // Kick off the pipeline so the just-pending stages actually re-run.
     run();
   };
 
