@@ -1536,6 +1536,27 @@ pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+/// Reset a stage (and everything downstream of it) back to `pending` so the
+/// next `run_recording` re-executes just that slice of the pipeline. Used by
+/// the in-stage "Redo" affordance — lighter than `start_over_recording`,
+/// which resets from `extract`.
+#[tauri::command]
+pub async fn reset_recording_from(
+    store: tauri::State<'_, Arc<Store>>,
+    id: String,
+    stage: String,
+) -> Result<(), String> {
+    let stage_kind = storage::StageKind::from_str(&stage)
+        .ok_or_else(|| format!("invalid stage: {stage}"))?;
+    let store_clone = (*store).clone();
+    let id_clone = id.clone();
+    tokio::task::spawn_blocking(move || {
+        storage::stages::reset_from(&store_clone, &id_clone, stage_kind)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
 #[tauri::command]
 pub fn is_demo_mode(app: tauri::AppHandle) -> Result<bool, String> {
     let dir = app

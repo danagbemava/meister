@@ -252,6 +252,23 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     onRecordingChanged();
   };
 
+  const redoStage = async (stage: "transcribe" | "format") => {
+    const label = stage === "transcribe" ? "Transcribe" : "Format";
+    const downstreamNote = stage === "transcribe"
+      ? " The current transcript and formatted output will be discarded."
+      : " The current formatted output will be discarded.";
+    const ok = await dialogConfirm(
+      `Re-run ${label}?${downstreamNote}`,
+      { title: `Re-run ${label}`, kind: "warning" },
+    );
+    if (!ok) return;
+    await api.resetRecordingFrom(recordingId, stage);
+    await reload();
+    onRecordingChanged();
+    // Kick off the pipeline so the just-pending stages actually re-run.
+    run();
+  };
+
   const deleteMe = async () => {
     const ok = await dialogConfirm(
       `Delete recording '${rec.name}'?`,
@@ -351,6 +368,10 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
             const progress =
               s.status === "running" && k === "transcribe" ? transcribePct
               : undefined;
+            const onRedo =
+              k === "transcribe" || k === "format"
+                ? () => void redoStage(k)
+                : undefined;
             return (
               <StageCard
                 key={k}
@@ -359,6 +380,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
                 error={s.error}
                 subtitle={subtitle}
                 progress={progress}
+                onRedo={onRedo}
+                redoDisabled={running || backendRunning}
               />
             );
           })}

@@ -29,6 +29,9 @@ export const api = {
 
   startOverRecording: (id: string) => invoke<void>("start_over_recording", { id }),
 
+  resetRecordingFrom: (id: string, stage: "extract" | "transcribe" | "format") =>
+    invoke<void>("reset_recording_from", { id, stage }),
+
   runRecording: (recordingId: string) =>
     invoke<void>("run_recording", { recordingId }),
 

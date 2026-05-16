@@ -173,6 +173,7 @@ pub fn run() {
             commands::update_recording,
             commands::delete_recording,
             commands::start_over_recording,
+            commands::reset_recording_from,
             commands::cancel_recording,
             commands::path_exists,
             commands::get_global_settings,
