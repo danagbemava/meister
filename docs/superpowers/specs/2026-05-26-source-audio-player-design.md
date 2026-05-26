@@ -33,13 +33,13 @@ For the current Twi+English transcript debugging session, this is the bottleneck
 
 Three small changes, all in well-isolated layers:
 
-1. **Tauri side — enable the asset protocol.** Add `app.security.assetProtocol` to `tauri.conf.json` with `enable: true` and `scope: ["**"]`. Add `core:asset:default` to the main window capability. This lets the webview load arbitrary local files via the `asset://` URL scheme.
+1. **Tauri side — enable the asset protocol.** Add `app.security.assetProtocol` to `tauri.conf.json` with `enable: true` and an object-form `scope` that allows `**/*` with `requireLiteralLeadingDot: false` (so hidden-folder paths like `~/Library/...` aren't filtered out). No capability change needed — in Tauri 2 the asset protocol is gated only by `app.security.assetProtocol` + `scope`, not by per-window permissions. CSP isn't a concern either because `tauri.conf.json` has `"csp": null`.
 2. **Frontend bridge — use `convertFileSrc`.** `@tauri-apps/api/core` already exposes `convertFileSrc(path)`. Wrap each source path with it to get a webview-loadable URL.
 3. **UI — inline expander per source row.** Add a chevron toggle on each row in the existing `Sources` list. Expanded rows render `<audio controls preload="metadata" src={convertFileSrc(p)} />` directly below the path. State is a `Set<number>` of expanded indices, held in `RecordingView`.
 
 ### Why broad scope
 
-The asset protocol `scope` gates which paths the webview can fetch. The chosen value `["**"]` matches the rest of Meister's filesystem posture: source paths are already absolute user-chosen filesystem paths from the OS file picker — the user has already vouched for those paths. A tighter scope (e.g. dynamic per-recording, or hardcoded `~/Movies`) would either complicate the build (Tauri 2's scope is configured at build/capability time, not per-invocation) or silently break for sources outside the allowed dirs.
+The asset protocol `scope` gates which paths the webview can fetch. The chosen value (`allow: ["**/*"]`, `requireLiteralLeadingDot: false`) matches the rest of Meister's filesystem posture: source paths are already absolute user-chosen filesystem paths from the OS file picker — the user has already vouched for those paths. The `requireLiteralLeadingDot: false` part is important on macOS, where `app_data_dir` resolves under `~/Library/...` (a hidden-prefixed path); the default `true` setting would refuse to load anything inside it. A tighter scope (e.g. dynamic per-recording, or hardcoded `~/Movies`) would either complicate the build (Tauri 2's scope is configured at build time, not per-invocation) or silently break for sources outside the allowed dirs.
 
 ### Why `<audio>` not `<video>`
 
@@ -84,7 +84,6 @@ No automated test for this change. Playback is a webview + OS codec integration;
 | File | Change |
 |---|---|
 | `src-tauri/tauri.conf.json` | Add `app.security.assetProtocol` block. |
-| `src-tauri/capabilities/default.json` | Append `core:asset:default` to permissions. |
 | `src/components/RecordingView.tsx` | Per-row chevron + conditional `<audio>` element. New `expandedSources: Set<number>` state. |
 
 ## Risks
