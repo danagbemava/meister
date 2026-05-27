@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import AskPanel from "./AskPanel";
@@ -66,6 +66,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
       return next;
     });
   }, []);
+
+  const [playerErrors, setPlayerErrors] = useState<Record<number, string>>({});
 
   const { settings: globalSettings } = useGlobalSettings();
 
@@ -383,6 +385,31 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
                       </Button>
                     )}
                   </div>
+                  {!missing && expandedSources.has(idx) && (
+                    <div className="pl-7 pr-1 pb-1">
+                      <audio
+                        controls
+                        preload="metadata"
+                        src={convertFileSrc(p)}
+                        className="w-full h-8"
+                        onError={(e) => {
+                          const el = e.currentTarget;
+                          const msg = el.error?.message || `Cannot play this file (code ${el.error?.code ?? "?"}).`;
+                          setPlayerErrors((prev) => ({ ...prev, [idx]: msg }));
+                        }}
+                        onLoadedMetadata={() => {
+                          setPlayerErrors((prev) => {
+                            if (!(idx in prev)) return prev;
+                            const { [idx]: _, ...rest } = prev;
+                            return rest;
+                          });
+                        }}
+                      />
+                      {playerErrors[idx] && (
+                        <p className="mt-1 text-status-error text-footnote font-sans">{playerErrors[idx]}</p>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}
