@@ -160,6 +160,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   useEffect(() => {
     setHighlightRange(undefined);
     setFormattedDraft(null);
+    setExpandedSources(new Set());
+    setPlayerErrors({});
   }, [recordingId]);
 
   // Adopt the DB value whenever it changes externally (re-run completes,
