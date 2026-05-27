@@ -56,6 +56,17 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const [formattedDraft, setFormattedDraft] = useState<string | null>(null);
   const persistTimerRef = useRef<number | null>(null);
 
+  const [expandedSources, setExpandedSources] = useState<Set<number>>(() => new Set());
+
+  const toggleSourceExpanded = useCallback((idx: number) => {
+    setExpandedSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }, []);
+
   const { settings: globalSettings } = useGlobalSettings();
 
   useEffect(() => {
@@ -335,27 +346,43 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
               return (
                 <li
                   key={`${p}-${idx}`}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded text-footnote font-mono
+                  className={`flex flex-col gap-1.5 px-3 py-1.5 rounded text-footnote font-mono
                     ${missing
                       ? "bg-status-error/10 border border-status-error/20"
                       : "bg-control-background"}`}
                 >
-                  <span className="text-label-tertiary tabular-nums w-5 shrink-0">
-                    {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
-                  </span>
-                  <span className={`flex-1 truncate ${missing ? "text-status-error" : "text-label-secondary"}`} title={p}>
-                    {p}
-                  </span>
-                  {missing && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => locateSource(idx)}
-                      className="text-accent shrink-0"
-                    >
-                      Locate…
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {!missing ? (
+                      <button
+                        type="button"
+                        aria-label={expandedSources.has(idx) ? "Collapse player" : "Expand player"}
+                        aria-expanded={expandedSources.has(idx)}
+                        onClick={() => toggleSourceExpanded(idx)}
+                        className="shrink-0 inline-flex items-center justify-center w-4 h-4 text-label-tertiary hover:text-label-primary transition-transform"
+                        style={{ transform: expandedSources.has(idx) ? "rotate(90deg)" : "rotate(0deg)" }}
+                      >
+                        <Icon name="chevron-right" size="sm" />
+                      </button>
+                    ) : (
+                      <span className="shrink-0 w-4" aria-hidden />
+                    )}
+                    <span className="text-label-tertiary tabular-nums w-5 shrink-0">
+                      {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
+                    </span>
+                    <span className={`flex-1 truncate ${missing ? "text-status-error" : "text-label-secondary"}`} title={p}>
+                      {p}
+                    </span>
+                    {missing && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => locateSource(idx)}
+                        className="text-accent shrink-0"
+                      >
+                        Locate…
+                      </Button>
+                    )}
+                  </div>
                 </li>
               );
             })}
