@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, Project, Recording, Template } from "../types/storage";
+import type { GlobalSettings, Project, Recording, Template } from "../types/storage";
 
 export const api = {
   listProjects: () => invoke<Project[]>("list_projects"),
 
-  createProject: (name: string, defaultSettings: AppSettings, template: Template) =>
-    invoke<Project>("create_project", { name, defaultSettings, template }),
+  createProject: (name: string, template: Template) =>
+    invoke<Project>("create_project", { name, template }),
 
   updateProject: (project: Project) => invoke<void>("update_project", { project }),
 
@@ -20,8 +20,7 @@ export const api = {
     projectId: string,
     name: string,
     sourcePaths: string[],
-    settings: AppSettings,
-  ) => invoke<Recording>("create_recording", { projectId, name, sourcePaths, settings }),
+  ) => invoke<Recording>("create_recording", { projectId, name, sourcePaths }),
 
   updateRecording: (recording: Recording) =>
     invoke<void>("update_recording", { recording }),
@@ -30,11 +29,26 @@ export const api = {
 
   startOverRecording: (id: string) => invoke<void>("start_over_recording", { id }),
 
+  resetRecordingFrom: (id: string, stage: "extract" | "transcribe" | "format") =>
+    invoke<void>("reset_recording_from", { id, stage }),
+
   runRecording: (recordingId: string) =>
     invoke<void>("run_recording", { recordingId }),
 
-  recordSavedOutputs: (recordingId: string, savedPaths: string[]) =>
-    invoke<void>("record_saved_outputs", { recordingId, savedPaths }),
+  getGlobalSettings: () => invoke<GlobalSettings>("get_global_settings"),
+
+  setGlobalSettings: (settings: GlobalSettings) =>
+    invoke<void>("set_global_settings", { settings }),
+
+  openSettingsWindow: () => invoke<void>("open_settings_window"),
+
+  setFormatOutput: (recordingId: string, output: string) =>
+    invoke<void>("set_format_output", { recordingId, output }),
+
+  isDemoMode: () => invoke<boolean>("is_demo_mode"),
+
+  setDemoMode: (enabled: boolean) =>
+    invoke<void>("set_demo_mode", { enabled }),
 
   startCallCapture: async (includeMic: boolean) => {
     const raw = await invoke<{

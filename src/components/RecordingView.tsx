@@ -1,11 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { save as saveDialog, open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import AskPanel from "./AskPanel";
-import SettingsForm from "./SettingsForm";
 import { Button, Icon, Input, Toolbar } from "./ui";
 import { api } from "../api/storage";
 import {
@@ -14,9 +13,12 @@ import {
   type StageRecord,
   type StageKind,
 } from "../types/storage";
+import { exportRecording } from "../lib/exportRecording";
+import { useGlobalSettings } from "../lib/useGlobalSettings";
 
 export interface RecordingViewHandle {
   runPipeline: () => void;
+  exportFile: () => void;
 }
 
 interface Props {
@@ -25,7 +27,7 @@ interface Props {
   onRecordingDeleted: () => void;
 }
 
-const STAGE_ORDER: StageKind[] = ["extract", "transcribe", "format", "save"];
+const STAGE_ORDER: StageKind[] = ["extract", "transcribe", "format"];
 
 const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingView(
   { recordingId, onRecordingChanged, onRecordingDeleted },
@@ -49,6 +51,25 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const [highlightRange, setHighlightRange] = useState<
     { start: number; end: number; nonce: number } | undefined
   >(undefined);
+  // null = adopt whatever the DB says. Becomes a string once the user
+  // starts editing the formatted output.
+  const [formattedDraft, setFormattedDraft] = useState<string | null>(null);
+  const persistTimerRef = useRef<number | null>(null);
+
+  const [expandedSources, setExpandedSources] = useState<Set<number>>(() => new Set());
+
+  const toggleSourceExpanded = useCallback((idx: number) => {
+    setExpandedSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }, []);
+
+  const [playerErrors, setPlayerErrors] = useState<Record<number, string>>({});
+
+  const { settings: globalSettings } = useGlobalSettings();
 
   useEffect(() => {
     if (!rec) return;
@@ -113,10 +134,11 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   }, [recordingId, reload]);
 
   const runRef = useRef<() => void>(() => {});
+  const exportFlowRef = useRef<() => void>(() => {});
+
   useImperativeHandle(ref, () => ({
-    runPipeline: () => {
-      runRef.current();
-    },
+    runPipeline: () => { runRef.current(); },
+    exportFile: () => { exportFlowRef.current(); },
   }));
 
   const hasTranscript =
@@ -137,19 +159,82 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   useEffect(() => {
     setHighlightRange(undefined);
+    setFormattedDraft(null);
+    setExpandedSources(new Set());
+    setPlayerErrors({});
   }, [recordingId]);
+
+  // Adopt the DB value whenever it changes externally (re-run completes,
+  // app loads). User edits in `formattedDraft` are reconciled into the DB
+  // on a 500ms debounce; once the persist round-trips, dbFormatted will
+  // match the draft and the draft can be cleared so subsequent external
+  // updates win.
+  const dbFormattedForEffect =
+    rec?.stages.find((s) => s.stage === "format")?.output ?? "";
+  useEffect(() => {
+    setFormattedDraft((draft) =>
+      draft === null || draft === dbFormattedForEffect ? null : draft,
+    );
+  }, [dbFormattedForEffect]);
+
+  const onFormattedChange = useCallback(
+    (next: string) => {
+      setFormattedDraft(next);
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+      persistTimerRef.current = window.setTimeout(() => {
+        void api.setFormatOutput(recordingId, next).catch((err) => {
+          console.warn("setFormatOutput failed:", err);
+        });
+      }, 500);
+    },
+    [recordingId],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        exportFlowRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (!rec) return <div className="p-8 text-label-tertiary">Loading…</div>;
 
   const stageOf = (k: StageKind): StageRecord | undefined =>
     rec.stages.find((s) => s.stage === k);
   const transcript = stageOf("transcribe")?.output ?? "";
-  const formatted = stageOf("format")?.output ?? "";
-  const savedPaths = stageOf("save")?.savedPaths ?? [];
+  const dbFormatted = stageOf("format")?.output ?? "";
+  const formatStatus = stageOf("format")?.status;
+  const formatted = formattedDraft ?? dbFormatted;
   const anyFailed = rec.stages.some((s) => s.status === "failed");
   const allCompleted = rec.stages.every((s) => s.status === "completed");
   const backendRunning = rec.stages.some((s) => s.status === "running");
   const canRun = !running && !backendRunning && !allCompleted; // re-run happens via Start over + Run
+
+  const exportFlow = async () => {
+    if (!rec || !globalSettings) return;
+    if (!formatted) return;
+    await exportRecording({
+      formatted,
+      recordingName: rec.name,
+      defaultFormat: globalSettings.defaultExportFormat,
+    });
+  };
+
+  exportFlowRef.current = () => { void exportFlow(); };
 
   const run = async () => {
     setRunning(true);
@@ -157,15 +242,6 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     setFormatProgress(null);
     try {
       await api.runRecording(recordingId);
-      await reload();
-      // If save stage is "completed" with empty savedPaths, ask the user to pick paths.
-      const updated = await api.getRecording(recordingId);
-      if (updated) {
-        const s = updated.stages.find((x) => x.stage === "save");
-        if (s && s.status === "completed" && (s.savedPaths ?? []).length === 0) {
-          await runSaveFlow(updated);
-        }
-      }
       await reload();
     } catch (err) {
       console.error("run_recording failed:", err);
@@ -180,32 +256,6 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     if (canRun) run();
   };
 
-  const runSaveFlow = async (r: Recording) => {
-    const formatted = r.stages.find((s) => s.stage === "format")?.output ?? "";
-    const paths: string[] = [];
-    for (const fmt of r.settings.outputFormats) {
-      const defaultName = `${r.name}.${fmt}`;
-      const dest = await saveDialog({
-        defaultPath: defaultName,
-        filters: [{ name: fmt.toUpperCase(), extensions: [fmt] }],
-      });
-      if (!dest) continue;
-      if (fmt === "md" || fmt === "txt") {
-        await invoke("save_text_file", { content: formatted, path: dest });
-        paths.push(dest);
-      } else if (fmt === "docx") {
-        const bytes = await generateDocx(formatted);
-        await invoke("save_binary_file", { bytes: Array.from(bytes), path: dest });
-        paths.push(dest);
-      } else if (fmt === "pdf") {
-        const bytes = await generatePdf(formatted);
-        await invoke("save_binary_file", { bytes: Array.from(bytes), path: dest });
-        paths.push(dest);
-      }
-    }
-    await api.recordSavedOutputs(r.id, paths);
-  };
-
   const startOver = async () => {
     const ok = await dialogConfirm(
       "Start over — discard all progress for this recording?",
@@ -215,6 +265,27 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
     await api.startOverRecording(recordingId);
     await reload();
     onRecordingChanged();
+  };
+
+  const redoStage = async (stage: "transcribe" | "format") => {
+    const label = stage === "transcribe" ? "Transcribe" : "Format";
+    const downstreamNote = stage === "transcribe"
+      ? " The current transcript and formatted output will be discarded."
+      : " The current formatted output will be discarded.";
+    const ok = await dialogConfirm(
+      `Re-run ${label}?${downstreamNote}`,
+      { title: `Re-run ${label}`, kind: "warning" },
+    );
+    if (!ok) return;
+    // Transcribe deletes the extracted WAVs on success to reclaim disk, so
+    // a true "reset transcribe" would fail on missing input. Re-extract
+    // first (it's cheap — just ffmpeg on the source) so transcribe has
+    // fresh WAVs to chew on.
+    const resetFrom = stage === "transcribe" ? "extract" : "format";
+    await api.resetRecordingFrom(recordingId, resetFrom);
+    await reload();
+    onRecordingChanged();
+    run();
   };
 
   const deleteMe = async () => {
@@ -267,37 +338,79 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           Delete
         </Button>
       </Toolbar>
-      <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-6">
-        <div className="flex flex-col gap-1">
+      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-w-0 min-h-0 p-8 flex flex-col gap-6">
+        <div className="shrink-0 flex flex-col gap-1">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
           </span>
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-1 max-h-[30vh] overflow-y-auto scrollable">
             {rec.sourcePaths.map((p, idx) => {
               const missing = !!missingByPath[p];
               return (
                 <li
                   key={`${p}-${idx}`}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded text-footnote font-mono
+                  className={`flex flex-col gap-1.5 px-3 py-1.5 rounded text-footnote font-mono
                     ${missing
                       ? "bg-status-error/10 border border-status-error/20"
                       : "bg-control-background"}`}
                 >
-                  <span className="text-label-tertiary tabular-nums w-5 shrink-0">
-                    {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
-                  </span>
-                  <span className={`flex-1 truncate ${missing ? "text-status-error" : "text-label-secondary"}`} title={p}>
-                    {p}
-                  </span>
-                  {missing && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => locateSource(idx)}
-                      className="text-accent shrink-0"
-                    >
-                      Locate…
-                    </Button>
+                  <div className="flex items-center gap-3">
+                    {!missing ? (
+                      <button
+                        type="button"
+                        aria-label={expandedSources.has(idx) ? "Collapse player" : "Expand player"}
+                        aria-expanded={expandedSources.has(idx)}
+                        onClick={() => toggleSourceExpanded(idx)}
+                        className="shrink-0 inline-flex items-center justify-center w-4 h-4 text-label-tertiary hover:text-label-primary transition-transform"
+                        style={{ transform: expandedSources.has(idx) ? "rotate(90deg)" : "rotate(0deg)" }}
+                      >
+                        <Icon name="chevron-right" size="sm" />
+                      </button>
+                    ) : (
+                      <span className="shrink-0 w-4" aria-hidden />
+                    )}
+                    <span className="text-label-tertiary tabular-nums w-5 shrink-0">
+                      {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
+                    </span>
+                    <span className={`flex-1 truncate ${missing ? "text-status-error" : "text-label-secondary"}`} title={p}>
+                      {p}
+                    </span>
+                    {missing && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => locateSource(idx)}
+                        className="text-accent shrink-0"
+                      >
+                        Locate…
+                      </Button>
+                    )}
+                  </div>
+                  {!missing && expandedSources.has(idx) && (
+                    <div className="pl-7 pr-1 pb-1">
+                      <audio
+                        controls
+                        preload="metadata"
+                        src={convertFileSrc(p)}
+                        className="w-full h-8"
+                        onError={(e) => {
+                          const el = e.currentTarget;
+                          const msg = el.error?.message || `Cannot play this file (code ${el.error?.code ?? "?"}).`;
+                          setPlayerErrors((prev) => ({ ...prev, [idx]: msg }));
+                        }}
+                        onLoadedMetadata={() => {
+                          setPlayerErrors((prev) => {
+                            if (!(idx in prev)) return prev;
+                            const { [idx]: _, ...rest } = prev;
+                            return rest;
+                          });
+                        }}
+                      />
+                      {playerErrors[idx] && (
+                        <p className="mt-1 text-status-error text-footnote font-sans">{playerErrors[idx]}</p>
+                      )}
+                    </div>
                   )}
                 </li>
               );
@@ -305,17 +418,20 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           </ul>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="shrink-0 flex flex-col gap-2">
           {STAGE_ORDER.map((k) => {
             const s = stageOf(k)!;
             const subtitle =
-              k === "transcribe" ? `model: ${rec.settings.whisperModel}`
-              : k === "format" ? `model: ${rec.settings.model}`
-              : k === "save" ? `formats: ${rec.settings.outputFormats.join(", ")}`
+              k === "transcribe" ? `model: ${globalSettings?.whisperModel ?? "?"}`
+              : k === "format" ? `model: ${globalSettings?.model ?? "?"}`
               : undefined;
             const progress =
               s.status === "running" && k === "transcribe" ? transcribePct
               : undefined;
+            const onRedo =
+              k === "transcribe" || k === "format"
+                ? () => void redoStage(k)
+                : undefined;
             return (
               <StageCard
                 key={k}
@@ -324,57 +440,23 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
                 error={s.error}
                 subtitle={subtitle}
                 progress={progress}
+                onRedo={onRedo}
+                redoDisabled={running || backendRunning}
               />
             );
           })}
         </div>
 
-        <details className="bg-control-background rounded-xl p-4">
-          <summary className="cursor-pointer text-body text-label-secondary">Recording settings</summary>
-          <div className="mt-4 flex flex-col gap-3">
-            {(() => {
-              const warning = completedStageInvalidation(rec);
-              return warning ? (
-                <p className="text-footnote bg-status-warning/10 border border-status-warning/20 text-status-warning rounded px-3 py-2">
-                  {warning}
-                </p>
-              ) : null;
-            })()}
-            <SettingsForm
-              settings={rec.settings}
-              onChange={async (settings) => {
-                const next = { ...rec, settings };
-                setRec(next);
-                await api.updateRecording(next);
-                onRecordingChanged();
-              }}
-            />
-          </div>
-        </details>
-
-        <div className={askOpen ? "flex gap-4" : ""}>
-          <div className="flex-1">
-            <OutputPreview
-              transcript={transcript}
-              formatted={formatted}
-              savedPaths={savedPaths}
-              highlightRange={highlightRange}
-            />
-          </div>
-          {askOpen && rec && (
-            <AskPanel
-              recordingId={rec.id}
-              disabled={!hasTranscript}
-              onCitationClick={(c) => {
-                if (c.start === null || c.end === null) return;
-                setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
-              }}
-            />
-          )}
-        </div>
+        <OutputPreview
+          transcript={transcript}
+          formatted={formatted}
+          highlightRange={highlightRange}
+          onFormattedChange={onFormattedChange}
+          formattedReadOnly={formatStatus !== "completed"}
+        />
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
-          <div className="text-footnote text-label-tertiary space-y-1">
+          <div className="shrink-0 text-footnote text-label-tertiary space-y-1">
             {formatProgress.phase === "single" && (
               <p>Formatting… {formatProgress.chars.toLocaleString()} chars</p>
             )}
@@ -403,6 +485,20 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           </div>
         )}
       </div>
+        {askOpen && rec && (
+          <div className="w-[420px] shrink-0 border-s border-separator flex flex-col">
+            <AskPanel
+              recordingId={rec.id}
+              disabled={!hasTranscript}
+              onCitationClick={(c) => {
+                if (c.start === null || c.end === null) return;
+                setHighlightRange({ start: c.start, end: c.end, nonce: Date.now() });
+              }}
+              onClose={() => setAskOpen(false)}
+            />
+          </div>
+        )}
+      </div>
 
       <div className="shrink-0 border-t border-separator p-4 flex items-center justify-between bg-window-background">
         <div className="flex items-center gap-2">
@@ -412,6 +508,15 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
             onClick={startOver}
           >
             Start over
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            disabled={!formatted}
+            title="Export the formatted output to a file (⌘E)"
+            onClick={() => void exportFlow()}
+          >
+            Export…
           </Button>
           <Button
             variant="secondary"
@@ -453,100 +558,3 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 });
 
 export default RecordingView;
-
-// ── Output generators (copied verbatim from old App.tsx) ─────────────────────
-
-async function generateDocx(markdown: string): Promise<Uint8Array> {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import("docx");
-  const lines = markdown.split("\n");
-  const children = lines.map((line) => {
-    if (line.startsWith("### ")) {
-      return new Paragraph({ text: line.slice(4), heading: HeadingLevel.HEADING_3 });
-    } else if (line.startsWith("## ")) {
-      return new Paragraph({ text: line.slice(3), heading: HeadingLevel.HEADING_2 });
-    } else if (line.startsWith("# ")) {
-      return new Paragraph({ text: line.slice(2), heading: HeadingLevel.HEADING_1 });
-    } else if (line.startsWith("**") && line.endsWith("**") && line.length > 4) {
-      return new Paragraph({ children: [new TextRun({ text: line.slice(2, -2), bold: true })] });
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      return new Paragraph({ text: line.slice(2), bullet: { level: 0 } });
-    } else if (line.trim() === "") {
-      return new Paragraph({ text: "" });
-    } else {
-      return new Paragraph({ text: line });
-    }
-  });
-  const doc = new Document({ sections: [{ properties: {}, children }] });
-  const blob = await Packer.toBlob(doc);
-  const ab = await blob.arrayBuffer();
-  return new Uint8Array(ab);
-}
-
-async function generatePdf(markdown: string): Promise<Uint8Array> {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 60;
-  const maxWidth = pageWidth - margin * 2;
-  let y = 80;
-  const lines = markdown.split("\n");
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (y > doc.internal.pageSize.getHeight() - 60) {
-      doc.addPage();
-      y = 60;
-    }
-    if (line.startsWith("# ")) {
-      doc.setFontSize(20).setFont("helvetica", "bold");
-      doc.text(line.slice(2), margin, y); y += 28;
-    } else if (line.startsWith("## ")) {
-      doc.setFontSize(16).setFont("helvetica", "bold");
-      doc.text(line.slice(3), margin, y); y += 22;
-    } else if (line.startsWith("### ")) {
-      doc.setFontSize(13).setFont("helvetica", "bold");
-      doc.text(line.slice(4), margin, y); y += 18;
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      doc.setFontSize(11).setFont("helvetica", "normal");
-      const wrapped = doc.splitTextToSize(`• ${line.slice(2)}`, maxWidth - 12);
-      doc.text(wrapped, margin + 8, y); y += wrapped.length * 14 + 2;
-    } else if (line.trim() === "") {
-      y += 8;
-    } else {
-      doc.setFontSize(11).setFont("helvetica", "normal");
-      const wrapped = doc.splitTextToSize(line, maxWidth);
-      doc.text(wrapped, margin, y); y += wrapped.length * 14 + 2;
-    }
-  }
-  return new Uint8Array(doc.output("arraybuffer") as ArrayBuffer);
-}
-
-function completedStageInvalidation(r: Recording): string | null {
-  const affected: string[] = [];
-  const stage = (k: StageKind) => r.stages.find((s) => s.stage === k);
-
-  const t = stage("transcribe");
-  if (t?.status === "completed") {
-    const encoded = `${r.settings.whisperModel}@${r.settings.language}`;
-    if (t.modelUsed !== encoded) affected.push("transcribe");
-  }
-
-  const f = stage("format");
-  if (f?.status === "completed" && f.modelUsed !== r.settings.model) {
-    affected.push("format");
-  }
-
-  const s = stage("save");
-  if (s?.status === "completed") {
-    const saved = (s.savedPaths ?? []).map((p) => p.split(".").pop() ?? "");
-    const want = [...r.settings.outputFormats].sort().join(",");
-    const have = [...new Set(saved)].sort().join(",");
-    if (want !== have) affected.push("save");
-  }
-
-  if (affected.length === 0) return null;
-  const downstream = affected.includes("transcribe")
-    ? " (+ format, save)"
-    : affected.includes("format") ? " (+ save)"
-    : "";
-  return `Changing settings will re-run: ${affected.join(", ")}${downstream} on next Run.`;
-}

@@ -33,7 +33,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use hound::WavWriter;
 use screencapturekit::cm::CMSampleBuffer;
@@ -56,6 +56,22 @@ pub fn wav_spec() -> hound::WavSpec {
     }
 }
 
+/// Shared writer slot: holds the file until the first sample arrives, then
+/// becomes the live `WavWriter` configured from the actually-delivered format.
+/// `with_sample_rate`/`with_channel_count` on `SCStreamConfiguration` are hints
+/// the platform can ignore, so we wait to see what we're actually getting before
+/// committing the WAV header.
+struct PendingWriter {
+    /// `Some` until the first sample buffer arrives. Moved into the `WavWriter`
+    /// when it's created; `None` afterwards (or if init failed).
+    file: Option<BufWriter<File>>,
+    /// `Some` once the first buffer's format description has been read and the
+    /// header committed. All subsequent samples go here.
+    writer: Option<WavWriter<BufWriter<File>>>,
+    /// Set once after a failed init so we don't spam the log on every callback.
+    init_failed: bool,
+}
+
 /// Opaque handle returned to the caller. `Drop` finalizes the WAV writer and
 /// releases the SCStream. We box this as `dyn Any + Send` in the public API
 /// so the registry stays agnostic across capture backends.
@@ -63,7 +79,7 @@ struct SystemAudioHandle {
     // SCStream's Drop stops the capture via sc_stream_release. We keep it
     // alive in the handle so the stream runs for the session's lifetime.
     _stream: SCStream,
-    writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
+    writer: Arc<Mutex<PendingWriter>>,
 }
 
 impl Drop for SystemAudioHandle {
@@ -72,18 +88,21 @@ impl Drop for SystemAudioHandle {
         // callback that still held the mutex has a chance to drain. The
         // stream release in SCStream::drop happens after this scope ends.
         if let Ok(mut guard) = self.writer.lock() {
-            if let Some(w) = guard.take() {
+            if let Some(w) = guard.writer.take() {
                 let _ = w.finalize();
             }
+            // The BufWriter<File> drops here if the writer was never created
+            // (no samples received). File handle closes normally.
         }
     }
 }
 
-/// Output handler that drops frames while paused, otherwise converts
-/// interleaved f32 to i16 and writes to the shared `WavWriter`.
+/// Output handler that drops frames while paused, otherwise reads the actual
+/// delivered audio format on first sample, writes samples to the lazily-created
+/// WAV, and handles both interleaved and non-interleaved (planar) buffer layouts.
 struct AudioOutput {
     paused: Arc<AtomicBool>,
-    writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
+    writer: Arc<Mutex<PendingWriter>>,
     amplitude: Arc<super::amplitude::AmplitudeEmitter>,
 }
 
@@ -105,40 +124,144 @@ impl SCStreamOutputTrait for AudioOutput {
             return;
         };
 
-        // ScreenCaptureKit delivers interleaved f32 by default when captures_audio
-        // is set. Sum the bytes across any buffers present (normally one).
+        // Diagnostic: log the actual format of the first buffer received,
+        // exactly once per process. The `with_sample_rate()` and
+        // `with_channel_count()` we passed to SCStreamConfiguration are
+        // requests, not guarantees — this surfaces what the platform
+        // actually delivered, which is what determines correct WAV-header
+        // sample rate. Keep this until the capture pipeline reads the
+        // delivered rate instead of trusting the request.
+        static LOGGED: OnceLock<()> = OnceLock::new();
+        LOGGED.get_or_init(|| {
+            let bufs: Vec<_> = list.iter().collect();
+            let first_bytes = bufs.first().map(|b| b.data().len()).unwrap_or(0);
+            let n_samples = sample_buffer.num_samples();
+            if let Some(fd) = sample_buffer.format_description() {
+                eprintln!(
+                    "[capture/system_audio] FIRST BUFFER: requested {} Hz × {} ch; \
+                     delivered rate={:?} Hz, channels={:?}, bits={:?}, \
+                     bytes_per_frame={:?}, is_float={}, format_flags={:?}; \
+                     ABL buffers={}, first_buffer_bytes={}, num_samples={}",
+                    SAMPLE_RATE, CHANNELS,
+                    fd.audio_sample_rate(),
+                    fd.audio_channel_count(),
+                    fd.audio_bits_per_channel(),
+                    fd.audio_bytes_per_frame(),
+                    fd.audio_is_float(),
+                    fd.audio_format_flags(),
+                    bufs.len(),
+                    first_bytes,
+                    n_samples,
+                );
+            } else {
+                eprintln!(
+                    "[capture/system_audio] FIRST BUFFER: no format_description; \
+                     requested {} Hz × {} ch; ABL buffers={}, first_buffer_bytes={}, \
+                     num_samples={}",
+                    SAMPLE_RATE, CHANNELS, bufs.len(), first_bytes, n_samples,
+                );
+            }
+        });
+
         let mut guard = match self.writer.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
-        let Some(writer) = guard.as_mut() else {
+
+        // Lazy WAV initialization: the first sample buffer's format_description
+        // tells us the actual delivered sample rate and channel count. Build the
+        // header from those — not from what we requested. Downstream `aresample`
+        // in mix.rs converts to 48 kHz before mixing.
+        if guard.writer.is_none() && !guard.init_failed {
+            let spec = match build_wav_spec_from(&sample_buffer) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("[capture/system_audio] cannot read delivered format: {e}; capture WAV will be empty");
+                    guard.init_failed = true;
+                    return;
+                }
+            };
+            let Some(file) = guard.file.take() else {
+                guard.init_failed = true;
+                return;
+            };
+            match WavWriter::new(file, spec) {
+                Ok(w) => {
+                    eprintln!(
+                        "[capture/system_audio] writing WAV at delivered format: {} Hz × {} ch",
+                        spec.sample_rate, spec.channels
+                    );
+                    guard.writer = Some(w);
+                }
+                Err(e) => {
+                    eprintln!("[capture/system_audio] WavWriter init failed: {e}");
+                    guard.init_failed = true;
+                    return;
+                }
+            }
+        }
+        let Some(writer) = guard.writer.as_mut() else {
             return;
         };
 
-        for buf in list.iter() {
-            let bytes = buf.data();
+        // Collect buffer slices once so we can branch on layout. SCStream usually
+        // delivers a single buffer (interleaved or mono), but planar multi-channel
+        // delivery (one AudioBuffer per channel) is a valid CoreAudio layout and
+        // is signalled by `bufs.len() > 1`. In that case, we must interleave
+        // before writing so hound's frame layout matches the WAV header.
+        let bufs: Vec<&[u8]> = list.iter().map(|b| b.data()).collect();
+
+        let frame: Vec<f32> = if bufs.len() <= 1 {
+            let bytes = bufs.first().copied().unwrap_or(&[]);
             let full = bytes.len() - (bytes.len() % 4);
-            let n = full / 4;
-            let mut frame: Vec<f32> = Vec::with_capacity(n);
+            let mut out = Vec::with_capacity(full / 4);
             let mut i = 0;
             while i < full {
-                let s = f32::from_ne_bytes([
-                    bytes[i],
-                    bytes[i + 1],
-                    bytes[i + 2],
-                    bytes[i + 3],
-                ]);
-                frame.push(s);
+                out.push(f32::from_ne_bytes([
+                    bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3],
+                ]));
                 i += 4;
             }
-            self.amplitude.push(super::amplitude::compute_rms(&frame));
-            for s in frame {
-                let clamped = s.clamp(-1.0, 1.0);
-                let v = (clamped * f32::from(i16::MAX)) as i16;
-                let _ = writer.write_sample(v);
+            out
+        } else {
+            // Planar: take the minimum sample count across channels (defensive
+            // against unequal buffer lengths) and interleave channel-by-channel.
+            let samples_per_ch = bufs.iter().map(|b| b.len() / 4).min().unwrap_or(0);
+            let mut out: Vec<f32> = Vec::with_capacity(samples_per_ch * bufs.len());
+            for sample_idx in 0..samples_per_ch {
+                for ch_bytes in &bufs {
+                    let i = sample_idx * 4;
+                    out.push(f32::from_ne_bytes([
+                        ch_bytes[i], ch_bytes[i + 1], ch_bytes[i + 2], ch_bytes[i + 3],
+                    ]));
+                }
             }
+            out
+        };
+
+        self.amplitude.push(super::amplitude::compute_rms(&frame));
+        for s in frame {
+            let clamped = s.clamp(-1.0, 1.0);
+            let v = (clamped * f32::from(i16::MAX)) as i16;
+            let _ = writer.write_sample(v);
         }
     }
+}
+
+/// Build a `WavSpec` from the first sample buffer's format description. Falls
+/// back to no-op errors when fields the platform should always populate are
+/// missing — those failures get logged once and the WAV is left empty (the
+/// capture won't crash the recording pipeline).
+fn build_wav_spec_from(sb: &CMSampleBuffer) -> Result<hound::WavSpec, String> {
+    let fd = sb.format_description().ok_or_else(|| "no format_description".to_string())?;
+    let rate = fd.audio_sample_rate().ok_or_else(|| "format_description has no sample_rate".to_string())?;
+    let channels = fd.audio_channel_count().ok_or_else(|| "format_description has no channel_count".to_string())?;
+    Ok(hound::WavSpec {
+        channels: channels as u16,
+        sample_rate: rate as u32,
+        bits_per_sample: BITS,
+        sample_format: hound::SampleFormat::Int,
+    })
 }
 
 /// Start a background SCStream that mixes every process's audio into a single
@@ -182,12 +305,15 @@ pub fn start_system_capture(
         .with_channel_count(i32::from(CHANNELS))
         .with_excludes_current_process_audio(true);
 
-    // Create the WAV writer. hound infers stereo-interleaved layout from the
-    // spec and writes samples in the order we feed them.
+    // Create the file now; defer WavWriter creation until the first sample
+    // buffer so we can read the actual delivered sample rate and channel count
+    // from its format description.
     let file = File::create(wav_path).map_err(|e| format!("create-wav: {e}"))?;
-    let writer = WavWriter::new(BufWriter::new(file), wav_spec())
-        .map_err(|e| format!("wav-writer-init: {e}"))?;
-    let writer = Arc::new(Mutex::new(Some(writer)));
+    let writer = Arc::new(Mutex::new(PendingWriter {
+        file: Some(BufWriter::new(file)),
+        writer: None,
+        init_failed: false,
+    }));
 
     let output = AudioOutput {
         paused,

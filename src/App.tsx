@@ -96,6 +96,24 @@ export default function App() {
     setMenuHandler("menu:toggle-sidebar", () => {
       setSidebarVisible((v) => !v);
     });
+    setMenuHandler("menu:settings", () => {
+      void api.openSettingsWindow();
+    });
+    setMenuHandler("menu:export", () => {
+      recordingViewRef.current?.exportFile();
+    });
+    setMenuHandler("menu:demo-mode", () => {
+      // Read the current state and flip it. The backend restarts the app
+      // after writing the flag so the new DB / captures dir take effect.
+      void (async () => {
+        try {
+          const current = await api.isDemoMode();
+          await api.setDemoMode(!current);
+        } catch (err) {
+          console.warn("toggle demo mode failed:", err);
+        }
+      })();
+    });
   }, [importAudioToActiveProject]);
 
   useEffect(() => {

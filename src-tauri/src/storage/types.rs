@@ -1,7 +1,4 @@
 //! Data types shared by storage, orchestrator, and Tauri commands.
-//!
-//! `settings` and `default_settings` are stored as JSON strings in SQLite
-//! and round-tripped through serde when loaded.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,16 +11,63 @@ pub enum OutputFormat {
     Pdf,
 }
 
+impl OutputFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OutputFormat::Md => "md",
+            OutputFormat::Txt => "txt",
+            OutputFormat::Docx => "docx",
+            OutputFormat::Pdf => "pdf",
+        }
+    }
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "md" => Some(OutputFormat::Md),
+            "txt" => Some(OutputFormat::Txt),
+            "docx" => Some(OutputFormat::Docx),
+            "pdf" => Some(OutputFormat::Pdf),
+            _ => None,
+        }
+    }
+}
+
+/// App-wide settings. Persisted in the singleton `app_settings` table.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AppSettings {
+pub struct GlobalSettings {
     #[serde(rename = "ollamaUrl")]
     pub ollama_url: String,
     pub model: String,
     #[serde(rename = "whisperModel")]
     pub whisper_model: String,
     pub language: String,
-    #[serde(rename = "outputFormats")]
-    pub output_formats: Vec<OutputFormat>,
+    #[serde(rename = "defaultExportFormat")]
+    pub default_export_format: OutputFormat,
+}
+
+/// The effective settings the orchestrator runs a recording with, computed
+/// from `(GlobalSettings, Project.language)` at run time.
+#[derive(Debug, Clone)]
+pub struct EffectiveSettings {
+    pub ollama_url: String,
+    pub model: String,
+    pub whisper_model: String,
+    pub language: String,
+}
+
+impl EffectiveSettings {
+    pub fn from(global: &GlobalSettings, project_language: Option<&str>) -> Self {
+        let language = project_language
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&global.language)
+            .to_string();
+        Self {
+            ollama_url: global.ollama_url.clone(),
+            model: global.model.clone(),
+            whisper_model: global.whisper_model.clone(),
+            language,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,10 +96,12 @@ pub struct Project {
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
     pub template: Template,
-    #[serde(rename = "defaultSettings")]
-    pub default_settings: AppSettings,
     #[serde(rename = "customInstructions", default, skip_serializing_if = "String::is_empty")]
     pub custom_instructions: String,
+    /// Optional per-project language override. `None`/empty means "use the
+    /// global default language".
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -64,7 +110,6 @@ pub enum StageKind {
     Extract,
     Transcribe,
     Format,
-    Save,
 }
 
 impl StageKind {
@@ -73,7 +118,6 @@ impl StageKind {
             StageKind::Extract => "extract",
             StageKind::Transcribe => "transcribe",
             StageKind::Format => "format",
-            StageKind::Save => "save",
         }
     }
 
@@ -82,16 +126,14 @@ impl StageKind {
             "extract" => Some(StageKind::Extract),
             "transcribe" => Some(StageKind::Transcribe),
             "format" => Some(StageKind::Format),
-            "save" => Some(StageKind::Save),
             _ => None,
         }
     }
 
-    pub const ALL: [StageKind; 4] = [
+    pub const ALL: [StageKind; 3] = [
         StageKind::Extract,
         StageKind::Transcribe,
         StageKind::Format,
-        StageKind::Save,
     ];
 }
 
@@ -113,7 +155,6 @@ impl StageStatus {
             StageStatus::Failed => "failed",
         }
     }
-
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "pending" => Some(StageStatus::Pending),
@@ -137,13 +178,9 @@ pub struct StageRecord {
     #[serde(rename = "templateHash")]
     pub template_hash: Option<String>,
     pub output: Option<String>,
-    #[serde(rename = "savedPaths")]
-    pub saved_paths: Option<Vec<String>>,
 }
 
-fn is_false(b: &bool) -> bool {
-    !*b
-}
+fn is_false(b: &bool) -> bool { !*b }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recording {
@@ -157,6 +194,5 @@ pub struct Recording {
     pub created_at: i64,
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
-    pub settings: AppSettings,
     pub stages: Vec<StageRecord>,
 }

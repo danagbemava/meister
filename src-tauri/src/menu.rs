@@ -2,21 +2,26 @@
 //! prefixed with `menu:` so the frontend can dispatch them.
 
 use tauri::menu::{
-    AboutMetadataBuilder, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+    AboutMetadataBuilder, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder,
+    PredefinedMenuItem, SubmenuBuilder,
 };
 use tauri::{AppHandle, Runtime};
 
 pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    // `app.path()` isn't usable yet — Tauri's `PathResolver` state is set up
+    // after the menu builder runs. Resolve the app data dir statically.
+    let demo_active = crate::demo::app_data_dir_static()
+        .map(|d| crate::demo::is_active(&d))
+        .unwrap_or(false);
     // App menu (Meister)
     let about_meta = AboutMetadataBuilder::new()
         .name(Some("Meister"))
         .version(Some(env!("CARGO_PKG_VERSION")))
         .build();
 
-    let preferences = MenuItemBuilder::new("Preferences…")
-        .id("menu:preferences")
+    let preferences = MenuItemBuilder::new("Settings…")
+        .id("menu:settings")
         .accelerator("CmdOrCtrl+,")
-        .enabled(false)
         .build(app)?;
 
     let app_submenu = SubmenuBuilder::new(app, "Meister")
@@ -42,10 +47,16 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .id("menu:import-audio")
         .accelerator("CmdOrCtrl+Shift+I")
         .build(app)?;
+    let export = MenuItemBuilder::new("Export…")
+        .id("menu:export")
+        .accelerator("CmdOrCtrl+E")
+        .build(app)?;
 
     let file_submenu = SubmenuBuilder::new(app, "File")
         .item(&new_project)
         .item(&import_audio)
+        .separator()
+        .item(&export)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
@@ -66,9 +77,15 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .id("menu:toggle-sidebar")
         .accelerator("Control+CmdOrCtrl+S")
         .build(app)?;
+    let demo_mode = CheckMenuItemBuilder::new("Demo Mode")
+        .id("menu:demo-mode")
+        .checked(demo_active)
+        .build(app)?;
 
     let view_submenu = SubmenuBuilder::new(app, "View")
         .item(&toggle_sidebar)
+        .separator()
+        .item(&demo_mode)
         .build()?;
 
     // Recording (app-specific)

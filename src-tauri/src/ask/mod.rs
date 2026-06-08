@@ -54,7 +54,7 @@ pub async fn ask_query(
     let store = (*store).clone();
     let rec_id = recording_id.clone();
     let (transcript, settings) =
-        tokio::task::spawn_blocking(move || -> Result<(String, crate::storage::AppSettings), String> {
+        tokio::task::spawn_blocking(move || -> Result<(String, crate::storage::GlobalSettings), String> {
             let r = storage::recordings::get(&store, &rec_id)?
                 .ok_or_else(|| format!("recording not found: {rec_id}"))?;
             let t = r
@@ -69,7 +69,8 @@ pub async fn ask_query(
                 .output
                 .clone()
                 .ok_or_else(|| "transcribe stage has no output".to_string())?;
-            Ok((transcript, r.settings))
+            let settings = storage::app_settings::get(&store)?;
+            Ok((transcript, settings))
         })
         .await
         .map_err(|e| format!("task join: {e}"))??;

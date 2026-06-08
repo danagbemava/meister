@@ -1,0 +1,51 @@
+{
+  "name": "Rust · Tauri · cargo-vet (Build Only)",
+  "build": {
+    "dockerfile": "Dockerfile",
+  },
+
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  "runArgs": [
+    "--security-opt",
+    "no-new-privileges",
+    "--mount",
+    "type=bind,source=/run/host-services/ssh-auth.sock,target=/run/host-services/ssh-auth.sock",
+    "--cap-drop",
+    "ALL",
+  ],
+
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/run/host-services/ssh-auth.sock",
+    // Keep cargo registry cache inside the container
+    // Prevents build.rs scripts from poisoning your host cargo cache
+    "CARGO_HOME": "/home/dev/.cargo",
+    // Enforce Cargo.lock — never allow lockfile mutations silently
+    "CARGO_NET_OFFLINE": "false",
+  },
+
+  "remoteUser": "dev",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "tamasfe.even-better-toml"],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.cargo.buildScripts.enable": true,
+        "[rust]": {
+          "editor.formatOnSave": true,
+        },
+      },
+    },
+  },
+
+  // cargo vet check runs before any build to flag unaudited dependencies
+  // If this fails, review the new dependency before proceeding
+  // cargo deny check enforces license policy and known advisories
+  "postCreateCommand": "cargo fetch && cargo deny check advisories && cargo vet",
+
+  // No port forwarding — this container builds only
+  // Run the compiled binary on your host directly
+  "forwardPorts": [],
+}

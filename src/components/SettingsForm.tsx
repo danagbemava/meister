@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, OutputFormat } from "../types/storage";
+import type { GlobalSettings, OutputFormat } from "../types/storage";
 import DownloadModelModal from "./DownloadModelModal";
-import { Checkbox, Input, Select } from "./ui";
+import { Input, Select } from "./ui";
 
 interface Props {
-  settings: AppSettings;
-  onChange: (s: AppSettings) => void;
+  settings: GlobalSettings;
+  onChange: (s: GlobalSettings) => void;
 }
 
 interface ModelInfo {
@@ -15,7 +15,7 @@ interface ModelInfo {
   size_bytes: number;
 }
 
-const OUTPUT_FORMATS: { id: OutputFormat; label: string; desc: string }[] = [
+const EXPORT_FORMATS: { id: OutputFormat; label: string; desc: string }[] = [
   { id: "md", label: "Markdown", desc: ".md" },
   { id: "txt", label: "Plain text", desc: ".txt" },
   { id: "docx", label: "Word doc", desc: ".docx" },
@@ -38,15 +38,8 @@ export default function SettingsForm({ settings, onChange }: Props) {
   const [modelInfos, setModelInfos] = useState<ModelInfo[]>([]);
   const [pendingDownload, setPendingDownload] = useState<ModelInfo | null>(null);
 
-  const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) =>
+  const set = <K extends keyof GlobalSettings>(key: K, val: GlobalSettings[K]) =>
     onChange({ ...settings, [key]: val });
-
-  const toggleFormat = (fmt: OutputFormat, checked: boolean) => {
-    const next = checked
-      ? Array.from(new Set([...settings.outputFormats, fmt]))
-      : settings.outputFormats.filter((f) => f !== fmt);
-    if (next.length > 0) set("outputFormats", next);
-  };
 
   useEffect(() => { refresh(); }, []);
 
@@ -101,7 +94,7 @@ export default function SettingsForm({ settings, onChange }: Props) {
             ))}
           </Select>
         </Field>
-        <Field label="Language">
+        <Field label="Default language">
           <Input
             value={settings.language}
             onChange={(e) => set("language", e.target.value)}
@@ -109,19 +102,24 @@ export default function SettingsForm({ settings, onChange }: Props) {
         </Field>
       </Section>
 
-      <Section title="Output Formats">
-        <div className="flex items-center gap-4 flex-wrap">
-          {OUTPUT_FORMATS.map(({ id, label, desc }) => (
-            <label key={id}
-              className="flex items-center gap-2 text-body text-label-primary cursor-pointer">
-              <Checkbox
-                checked={settings.outputFormats.includes(id)}
-                onCheckedChange={(c) => toggleFormat(id, Boolean(c))}
-              />
-              <span className="font-medium">{label}</span>
-              <span className="text-footnote text-label-tertiary">{desc}</span>
-            </label>
-          ))}
+      <Section title="Export">
+        <div className="flex flex-col gap-2">
+          <label className="text-body text-label-secondary">Default format</label>
+          <div className="flex flex-col gap-1">
+            {EXPORT_FORMATS.map(({ id, label, desc }) => (
+              <label key={id}
+                className="flex items-center gap-2 text-body text-label-primary cursor-pointer">
+                <input
+                  type="radio"
+                  name="defaultExportFormat"
+                  checked={settings.defaultExportFormat === id}
+                  onChange={() => set("defaultExportFormat", id)}
+                />
+                <span className="font-medium">{label}</span>
+                <span className="text-footnote text-label-tertiary">{desc}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </Section>
 

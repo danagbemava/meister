@@ -910,6 +910,13 @@ pub async fn run_format(
     custom_instructions: &str,
     cancel: Option<crate::cancellation::CancelToken>,
 ) -> Result<String, String> {
+    // No progress event for this long → fire the watchdog. The per-stream
+    // inactivity timer in `ollama_generate_stream` catches a single wedged
+    // stream; this catches wedges in the orchestration BETWEEN calls
+    // (e.g. between the last map and the reduce), which is invisible to
+    // the per-stream timer.
+    const FORMAT_STALL_TIMEOUT_SECS: i64 = 600;
+
     let cache_dir = app
         .path()
         .app_data_dir()
@@ -917,11 +924,44 @@ pub async fn run_format(
         .join("format-cache");
 
     let app_handle = app.clone();
+    let last_progress = Arc::new(std::sync::atomic::AtomicI64::new(now_ms()));
+    let watchdog_fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let lp_emit = last_progress.clone();
     let on_progress: Arc<dyn Fn(FormatProgress) + Send + Sync> = Arc::new(move |p| {
+        lp_emit.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
         let _ = app_handle.emit("format-progress", p);
     });
 
-    run_format_core(
+    let watchdog_handle = cancel.as_ref().map(|c| {
+        let cancel_clone = c.clone();
+        let lp_watch = last_progress.clone();
+        let fired = watchdog_fired.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                if cancel_clone.is_cancelled() {
+                    return;
+                }
+                let elapsed_ms =
+                    now_ms() - lp_watch.load(std::sync::atomic::Ordering::Relaxed);
+                let elapsed_secs = elapsed_ms / 1000;
+                if elapsed_secs > FORMAT_STALL_TIMEOUT_SECS {
+                    fired.store(true, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!(
+                        "format watchdog: no progress for {elapsed_secs}s, cancelling",
+                    );
+                    cancel_clone.cancel();
+                    return;
+                }
+            }
+        })
+    });
+
+    let result = run_format_core(
         transcript,
         template_content,
         ollama_url,
@@ -932,7 +972,20 @@ pub async fn run_format(
         on_progress,
         cancel,
     )
-    .await
+    .await;
+
+    if let Some(h) = watchdog_handle {
+        h.abort();
+    }
+
+    if watchdog_fired.load(std::sync::atomic::Ordering::SeqCst) {
+        Err(format!(
+            "Format stalled — no progress for {} minutes. Likely Ollama wedged or the orchestrator hung between calls. Try restarting Ollama (pkill ollama && ollama serve) and re-running.",
+            FORMAT_STALL_TIMEOUT_SECS / 60,
+        ))
+    } else {
+        result
+    }
 }
 
 
@@ -1152,7 +1205,7 @@ pub fn cancel_model_download(
 
 // ── Storage commands ──────────────────────────────────────────────────────────
 
-use crate::storage::{self, AppSettings, Project, Recording, Store, Template};
+use crate::storage::{self, GlobalSettings, Project, Recording, Store, Template};
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -1175,7 +1228,6 @@ pub async fn list_projects(
 pub async fn create_project(
     store: tauri::State<'_, Arc<Store>>,
     name: String,
-    default_settings: AppSettings,
     template: Template,
 ) -> Result<Project, String> {
     let store = (*store).clone();
@@ -1188,11 +1240,12 @@ pub async fn create_project(
             created_at: now,
             updated_at: now,
             template,
-            default_settings,
             custom_instructions: String::new(),
+            language: None,
         };
         storage::projects::insert(&store, &p)?;
-        Ok::<Project, String>(p)
+        storage::projects::get(&store, &p.id)?
+            .ok_or_else(|| "project vanished after insert".to_string())
     })
     .await
     .map_err(|e| format!("join: {e}"))?
@@ -1266,7 +1319,6 @@ pub async fn create_recording(
     project_id: String,
     name: String,
     source_paths: Vec<String>,
-    settings: AppSettings,
 ) -> Result<Recording, String> {
     let store = (*store).clone();
     tokio::task::spawn_blocking(move || {
@@ -1279,7 +1331,6 @@ pub async fn create_recording(
             source_paths,
             created_at: now,
             updated_at: now,
-            settings,
             stages: vec![],
         };
         storage::recordings::insert(&store, &r)?;
@@ -1365,42 +1416,6 @@ pub async fn cancel_recording(
     }
 }
 
-// ── Save helpers ───────────────────────────────────────────────────────────
-
-/// Placeholder helper kept so the orchestrator has a symbol to import — the
-/// actual save step runs on the React side via file dialogs. No-op.
-pub async fn run_save_outputs() -> Result<(), String> {
-    Ok(())
-}
-
-/// Called by the UI after the user finishes picking save paths and writing
-/// the output files. Appends to the save stage's saved_paths and marks it
-/// completed.
-#[tauri::command]
-pub async fn record_saved_outputs(
-    store: tauri::State<'_, Arc<Store>>,
-    recording_id: String,
-    saved_paths: Vec<String>,
-) -> Result<(), String> {
-    let store = (*store).clone();
-    tokio::task::spawn_blocking(move || {
-        storage::stages::set_completed(
-            &store,
-            &recording_id,
-            storage::StageKind::Save,
-            storage::stages::CompletedOutput {
-                output: None,
-                model_used: None,
-                template_hash: None,
-                saved_paths: Some(saved_paths),
-                completed_at: now_ms(),
-            },
-        )
-    })
-    .await
-    .map_err(|e| format!("join: {e}"))?
-}
-
 #[tauri::command]
 pub fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
@@ -1478,6 +1493,104 @@ pub async fn stop_call_capture(
     let registry = (*registry).clone();
     tokio::task::spawn_blocking(move || {
         capture::finalize_session(&registry, &session_id, &captures_dir)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+// ── Global settings commands ───────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_global_settings(
+    store: tauri::State<'_, Arc<Store>>,
+) -> Result<GlobalSettings, String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::app_settings::get(&store))
+        .await
+        .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub async fn set_global_settings(
+    store: tauri::State<'_, Arc<Store>>,
+    app: tauri::AppHandle,
+    settings: GlobalSettings,
+) -> Result<(), String> {
+    let store = (*store).clone();
+    tokio::task::spawn_blocking(move || storage::app_settings::set(&store, &settings))
+        .await
+        .map_err(|e| format!("join: {e}"))??;
+    let _ = app.emit("global-settings-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("settings") {
+        w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("settings window not found".to_string())
+    }
+}
+
+/// Reset a stage (and everything downstream of it) back to `pending` so the
+/// next `run_recording` re-executes just that slice of the pipeline. Used by
+/// the in-stage "Redo" affordance — lighter than `start_over_recording`,
+/// which resets from `extract`.
+#[tauri::command]
+pub async fn reset_recording_from(
+    store: tauri::State<'_, Arc<Store>>,
+    id: String,
+    stage: String,
+) -> Result<(), String> {
+    let stage_kind = storage::StageKind::from_str(&stage)
+        .ok_or_else(|| format!("invalid stage: {stage}"))?;
+    let store_clone = (*store).clone();
+    let id_clone = id.clone();
+    tokio::task::spawn_blocking(move || {
+        storage::stages::reset_from(&store_clone, &id_clone, stage_kind)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+#[tauri::command]
+pub fn is_demo_mode(app: tauri::AppHandle) -> Result<bool, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?;
+    Ok(crate::demo::is_active(&dir))
+}
+
+/// Flip demo mode on or off and immediately restart the app so the new
+/// database / captures directory take effect cleanly.
+#[tauri::command]
+pub fn set_demo_mode(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir: {e}"))?;
+    if enabled {
+        crate::demo::enable(&dir)?;
+    } else {
+        crate::demo::disable(&dir)?;
+    }
+    app.restart();
+}
+
+#[tauri::command]
+pub async fn set_format_output(
+    state: tauri::State<'_, Arc<storage::Store>>,
+    recording_id: String,
+    output: String,
+) -> Result<(), String> {
+    let store = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        storage::stages::set_output(&store, &recording_id, storage::StageKind::Format, &output)
     })
     .await
     .map_err(|e| format!("join: {e}"))?

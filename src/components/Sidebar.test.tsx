@@ -10,13 +10,6 @@ const proj = (id: string, name: string): Project => ({
   createdAt: 1000,
   updatedAt: 1000,
   template: { source: "inline", content: "", sourcePath: null },
-  defaultSettings: {
-    ollamaUrl: "http://localhost:11434",
-    model: "gemma3",
-    whisperModel: "base",
-    language: "auto",
-    outputFormats: ["md"],
-  },
 });
 
 const rec = (id: string, projectId: string, name: string): Recording => ({
@@ -26,13 +19,6 @@ const rec = (id: string, projectId: string, name: string): Recording => ({
   sourcePaths: [],
   createdAt: 1000,
   updatedAt: 1000,
-  settings: {
-    ollamaUrl: "http://localhost:11434",
-    model: "gemma3",
-    whisperModel: "base",
-    language: "auto",
-    outputFormats: ["md"],
-  },
   stages: [],
 });
 

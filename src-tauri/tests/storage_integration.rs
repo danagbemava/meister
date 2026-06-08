@@ -2,19 +2,9 @@
 
 use meister_lib::orchestrator;
 use meister_lib::storage::{
-    self, AppSettings, OutputFormat, Project, Store, Template, TemplateSource,
+    self, Project, Store, Template, TemplateSource,
 };
 use meister_lib::storage::{Recording, StageKind, StageStatus};
-
-fn default_settings() -> AppSettings {
-    AppSettings {
-        ollama_url: "http://localhost:11434".to_string(),
-        model: "gemma3".to_string(),
-        whisper_model: "base".to_string(),
-        language: "auto".to_string(),
-        output_formats: vec![OutputFormat::Md],
-    }
-}
 
 fn sample_project() -> Project {
     Project {
@@ -28,8 +18,8 @@ fn sample_project() -> Project {
             source_path: None,
             match_style: false,
         },
-        default_settings: default_settings(),
         custom_instructions: String::new(),
+        language: None,
     }
 }
 
@@ -79,7 +69,6 @@ fn sample_recording(project_id: &str) -> Recording {
         source_paths: vec!["/tmp/kickoff.mp4".to_string()],
         created_at: 1_500,
         updated_at: 1_500,
-        settings: default_settings(),
         stages: vec![],
     }
 }
@@ -93,7 +82,7 @@ fn recordings_insert_initializes_pending_stages() {
     storage::recordings::insert(&store, &r).unwrap();
 
     let loaded = storage::recordings::get(&store, "r1").unwrap().unwrap();
-    assert_eq!(loaded.stages.len(), 4);
+    assert_eq!(loaded.stages.len(), 3);
     for (i, kind) in StageKind::ALL.iter().enumerate() {
         assert_eq!(loaded.stages[i].stage, *kind);
         assert_eq!(loaded.stages[i].status, StageStatus::Pending);
@@ -156,7 +145,6 @@ fn stage_update_roundtrip() {
             output: Some("hello".to_string()),
             model_used: Some("base".to_string()),
             template_hash: None,
-            saved_paths: None,
             completed_at: 9_999,
         },
     )
@@ -179,7 +167,7 @@ fn reset_downstream_clears_later_stages() {
     storage::projects::insert(&store, &sample_project()).unwrap();
     storage::recordings::insert(&store, &sample_recording("p1")).unwrap();
 
-    // Pretend all four succeeded.
+    // Pretend all three succeeded.
     for kind in StageKind::ALL {
         storage::stages::set_completed(
             &store, "r1", kind,
@@ -187,20 +175,18 @@ fn reset_downstream_clears_later_stages() {
                 output: Some("x".to_string()),
                 model_used: Some("m".to_string()),
                 template_hash: None,
-                saved_paths: None,
                 completed_at: 1,
             },
         ).unwrap();
     }
 
-    // Reset everything downstream of transcribe (so format + save go back to pending).
+    // Reset everything downstream of transcribe (so format goes back to pending).
     storage::stages::reset_downstream(&store, "r1", StageKind::Transcribe).unwrap();
     let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
     assert_eq!(rec.stages[0].status, StageStatus::Completed);       // extract
     assert_eq!(rec.stages[1].status, StageStatus::Completed);       // transcribe kept
     assert_eq!(rec.stages[2].status, StageStatus::Pending);         // format reset
     assert_eq!(rec.stages[2].output, None);
-    assert_eq!(rec.stages[3].status, StageStatus::Pending);         // save reset
 }
 
 #[test]
@@ -224,7 +210,7 @@ fn invalidating_transcribe_resets_format_and_save() {
     storage::projects::insert(&store, &sample_project()).unwrap();
     storage::recordings::insert(&store, &sample_recording("p1")).unwrap();
 
-    // All four stages "complete" at once (fake data).
+    // All three stages "complete" at once (fake data).
     for kind in StageKind::ALL {
         let model_used = match kind {
             StageKind::Transcribe => Some("base@en".to_string()),
@@ -241,7 +227,6 @@ fn invalidating_transcribe_resets_format_and_save() {
                 output: Some("x".to_string()),
                 model_used,
                 template_hash,
-                saved_paths: if kind == StageKind::Save { Some(vec![]) } else { None },
                 completed_at: 1,
             },
         ).unwrap();
@@ -250,13 +235,18 @@ fn invalidating_transcribe_resets_format_and_save() {
     // Simulate the orchestrator visiting the Transcribe stage with a changed setting:
     // user swapped whisper model from base→small. inputs_unchanged returns false,
     // so reset_from is called.
-    let mut rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
-    rec.settings.whisper_model = "small".to_string();
+    let rec = storage::recordings::get(&store, "r1").unwrap().unwrap();
+    let effective = meister_lib::storage::EffectiveSettings {
+        ollama_url: "http://localhost:11434".to_string(),
+        model: "gemma3".to_string(),
+        whisper_model: "small".to_string(), // changed from base
+        language: "en".to_string(),
+    };
 
     let transcribe = rec.stages.iter().find(|s| s.stage == StageKind::Transcribe).unwrap();
     let template_hash = storage::template_hash("# Minutes\n");
     let valid = orchestrator::inputs_unchanged(
-        StageKind::Transcribe, transcribe, &rec.settings,
+        StageKind::Transcribe, transcribe, &effective,
         &template_hash, rec.source_paths.first().map(String::as_str).unwrap_or(""), true,
     );
     assert!(!valid);
@@ -266,7 +256,6 @@ fn invalidating_transcribe_resets_format_and_save() {
     assert_eq!(rec.stages[0].status, StageStatus::Completed); // extract kept
     assert_eq!(rec.stages[1].status, StageStatus::Pending);   // transcribe reset
     assert_eq!(rec.stages[2].status, StageStatus::Pending);   // format reset
-    assert_eq!(rec.stages[3].status, StageStatus::Pending);   // save reset
 }
 
 #[test]
@@ -315,23 +304,23 @@ fn migrates_v1_to_v2_wraps_source_path_into_array() {
     )
     .unwrap();
 
-    let settings_json = serde_json::to_string(&default_settings()).unwrap();
+    let settings_json = r#"{"ollamaUrl":"http://localhost:11434","model":"gemma3","whisperModel":"base","language":"auto","outputFormats":["md"]}"#;
     conn.execute(
         "INSERT INTO projects (id, name, created_at, updated_at, template_source, template_content, default_settings) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["p1", "proj", 1i64, 1i64, "inline", "", &settings_json],
+        rusqlite::params!["p1", "proj", 1i64, 1i64, "inline", "", settings_json],
     ).unwrap();
     conn.execute(
         "INSERT INTO recordings (id, project_id, name, source_path, created_at, updated_at, settings) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["r1", "p1", "rec", "/x.mp4", 2i64, 2i64, &settings_json],
+        rusqlite::params!["r1", "p1", "rec", "/x.mp4", 2i64, 2i64, settings_json],
     ).unwrap();
 
     meister_lib::storage::schema::migrate(&conn).unwrap();
 
-    // user_version bumped.
+    // user_version bumped to latest (v4 includes v2+v3+v4 migrations).
     let v: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(v, 3);
+    assert_eq!(v, 4);
 
     // source_paths is a JSON array with the old path.
     let sp: String = conn
@@ -434,4 +423,138 @@ fn cleanup_orphaned_captures_ignores_referenced_files_across_many_recordings() {
     for p in [a, b, c] {
         assert!(p.exists());
     }
+}
+
+#[test]
+fn migration_v3_to_v4_seeds_app_settings_and_drops_legacy_columns() {
+    use rusqlite::Connection;
+
+    let conn = Connection::open_in_memory().expect("open db");
+    // Materialize the v3 schema directly (without calling migrate, which now
+    // goes all the way to v4 and drops the columns we need to seed from).
+    conn.execute_batch(r#"
+        CREATE TABLE projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            template_source TEXT NOT NULL,
+            template_content TEXT NOT NULL,
+            template_source_path TEXT,
+            default_settings TEXT NOT NULL,
+            template_match_style INTEGER NOT NULL DEFAULT 0,
+            custom_instructions TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE recordings (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            source_paths TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            settings TEXT NOT NULL
+        );
+        CREATE TABLE stages (
+            recording_id TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+            stage TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error TEXT,
+            completed_at INTEGER,
+            model_used TEXT,
+            template_hash TEXT,
+            output TEXT,
+            saved_paths TEXT,
+            PRIMARY KEY (recording_id, stage)
+        );
+        PRAGMA user_version = 3;
+    "#).unwrap();
+
+    // Insert a project with default_settings JSON containing an outputFormats array.
+    let default_settings = serde_json::json!({
+        "ollamaUrl": "http://localhost:11434",
+        "model": "gemma3",
+        "whisperModel": "small",
+        "language": "de",
+        "outputFormats": ["docx", "pdf"]
+    });
+    conn.execute(
+        "INSERT INTO projects \
+         (id, name, created_at, updated_at, template_source, template_content, \
+          template_source_path, default_settings, template_match_style, custom_instructions) \
+         VALUES ('p1','Proj',1,100,'inline','','',?1,0,'')",
+        rusqlite::params![default_settings.to_string()],
+    ).unwrap();
+
+    // Insert a recording with a (now-irrelevant) settings JSON.
+    conn.execute(
+        "INSERT INTO recordings \
+         (id, project_id, name, source_paths, created_at, updated_at, settings) \
+         VALUES ('r1','p1','Rec','[\"/x.mp3\"]',1,1,'{}')",
+        [],
+    ).unwrap();
+
+    // Insert a save-stage row that the migration should delete.
+    conn.execute(
+        "INSERT INTO stages (recording_id, stage, status) VALUES ('r1','save','completed')",
+        [],
+    ).unwrap();
+
+    // Run the migration framework forward to v4.
+    meister_lib::storage::schema::migrate(&conn).unwrap();
+
+    let v: i32 = conn.query_row("PRAGMA user_version;", [], |r| r.get(0)).unwrap();
+    assert_eq!(v, 4);
+
+    // app_settings exists and has exactly one row seeded from the project.
+    let (ollama, model, whisper, lang, fmt): (String, String, String, String, String) = conn
+        .query_row(
+            "SELECT ollama_url, model, whisper_model, language, default_export_format \
+             FROM app_settings",
+            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        ).unwrap();
+    assert_eq!(ollama, "http://localhost:11434");
+    assert_eq!(model, "gemma3");
+    assert_eq!(whisper, "small");
+    assert_eq!(lang, "de");
+    assert_eq!(fmt, "docx");  // first entry of outputFormats
+
+    // projects has new `language` column.
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(projects);").unwrap()
+        .query_map([], |r| r.get::<_, String>(1)).unwrap()
+        .filter_map(Result::ok).collect();
+    assert!(cols.iter().any(|c| c == "language"));
+    assert!(!cols.iter().any(|c| c == "default_settings"));
+
+    // recordings dropped settings.
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(recordings);").unwrap()
+        .query_map([], |r| r.get::<_, String>(1)).unwrap()
+        .filter_map(Result::ok).collect();
+    assert!(!cols.iter().any(|c| c == "settings"));
+
+    // save-stage rows are gone.
+    let n: i64 = conn
+        .query_row("SELECT count(*) FROM stages WHERE stage = 'save'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+#[test]
+fn migration_v3_to_v4_seeds_defaults_when_no_projects() {
+    use rusqlite::Connection;
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA user_version = 0;").unwrap();
+    meister_lib::storage::schema::migrate(&conn).unwrap();
+
+    let (ollama, whisper, lang, fmt): (String, String, String, String) = conn
+        .query_row(
+            "SELECT ollama_url, whisper_model, language, default_export_format \
+             FROM app_settings",
+            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        ).unwrap();
+    assert_eq!(ollama, "http://localhost:11434");
+    assert_eq!(whisper, "base");
+    assert_eq!(lang, "auto");
+    assert_eq!(fmt, "md");
 }

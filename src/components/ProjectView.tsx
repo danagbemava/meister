@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import TemplateEditor from "./TemplateEditor";
-import SettingsForm from "./SettingsForm";
 import RecordingDropZone from "./RecordingDropZone";
 import RecordCard from "./RecordCard";
 import RecordCallCard from "./RecordCallCard";
@@ -105,12 +104,7 @@ export default function ProjectView({
   const createFromStaging = async () => {
     if (!project || staging.length === 0) return;
     const name = stagingName.trim() || deriveName(staging);
-    const rec = await api.createRecording(
-      projectId,
-      name,
-      staging,
-      project.defaultSettings,
-    );
+    const rec = await api.createRecording(projectId, name, staging);
     setStaging([]);
     setStagingName("");
     setRecordings((rs) => [...rs, rec]);
@@ -189,13 +183,16 @@ export default function ProjectView({
         />
       </div>
 
-      <div>
-        <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider mb-3">
-          Default settings
-        </h2>
-        <SettingsForm
-          settings={project.defaultSettings}
-          onChange={(defaultSettings) => save({ ...project, defaultSettings })}
+      <div className="flex flex-col gap-2">
+        <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
+          Language override (optional)
+        </label>
+        <Input
+          value={project.language ?? ""}
+          onChange={(e) =>
+            save({ ...project, language: e.target.value.trim() === "" ? null : e.target.value })
+          }
+          placeholder="Leave empty to use the global default"
         />
       </div>
 

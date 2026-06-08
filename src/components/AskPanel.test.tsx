@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("../api/ask", () => ({
@@ -21,12 +21,12 @@ beforeEach(() => {
 
 describe("AskPanel", () => {
   it("shows the empty-state hint when there are no threads", () => {
-    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} />);
+    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} onClose={() => {}} />);
     expect(screen.getByText(/Ask anything about this transcript/i)).toBeInTheDocument();
   });
 
   it("disables the send button when input is whitespace", async () => {
-    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} />);
+    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} onClose={() => {}} />);
     const send = screen.getByRole("button", { name: /send/i });
     expect(send).toBeDisabled();
     await userEvent.type(screen.getByRole("textbox"), "   ");
@@ -41,7 +41,7 @@ describe("AskPanel", () => {
       citations: [{ quote: "Q3 budget review", start: 5, end: 21 }],
     });
     const onCite = vi.fn();
-    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={onCite} />);
+    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={onCite} onClose={() => {}} />);
     await userEvent.type(screen.getByRole("textbox"), "when?");
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
     expect(await screen.findByText(/It happened in Q3/i)).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe("AskPanel", () => {
       text: "answer.",
       citations: [{ quote: "untraceable", start: null, end: null }],
     });
-    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} />);
+    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} onClose={() => {}} />);
     await userEvent.type(screen.getByRole("textbox"), "any?");
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
     await screen.findByText(/answer\./);
@@ -68,14 +68,14 @@ describe("AskPanel", () => {
   });
 
   it("disables input when the recording has no transcript yet", () => {
-    render(<AskPanel recordingId="rec-1" disabled={true} onCitationClick={() => {}} />);
+    render(<AskPanel recordingId="rec-1" disabled={true} onCitationClick={() => {}} onClose={() => {}} />);
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
   });
 
   it("dismisses a thread via its × button", async () => {
     vi.mocked(askApi.query).mockResolvedValue({ text: "answer.", citations: [] });
-    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} />);
+    render(<AskPanel recordingId="rec-1" disabled={false} onCitationClick={() => {}} onClose={() => {}} />);
     await userEvent.type(screen.getByRole("textbox"), "q?");
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
     await screen.findByText(/answer\./);
@@ -84,5 +84,33 @@ describe("AskPanel", () => {
     await userEvent.click(dismiss);
     // Thread is gone; only the empty-state hint remains.
     expect(screen.getByText(/Ask anything about this transcript/i)).toBeInTheDocument();
+  });
+
+  it("calls onClose when Escape is pressed", () => {
+    const onClose = vi.fn();
+    render(
+      <AskPanel
+        recordingId="rec-1"
+        disabled={false}
+        onCitationClick={() => {}}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("renders a visible close button that calls onClose", async () => {
+    const onClose = vi.fn();
+    render(
+      <AskPanel
+        recordingId="rec-1"
+        disabled={false}
+        onCitationClick={() => {}}
+        onClose={onClose}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /close ask/i }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

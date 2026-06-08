@@ -23,10 +23,32 @@
         "decorations": true,
         "transparent": true,
         "titleBarStyle": "Overlay"
+      },
+      {
+        "label": "settings",
+        "title": "Settings",
+        "url": "index.html",
+        "width": 520,
+        "height": 640,
+        "minWidth": 480,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "visible": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "requireLiteralLeadingDot": false,
+          "allow": ["**/*"]
+        }
+      }
     }
   },
   "bundle": {
@@ -42,7 +64,8 @@
     "resources": [
       "resources/models/ggml-base.bin",
       "resources/models/ggml-base-encoder.mlmodelc/**/*",
-      "resources/ggml-metal.metal"
+      "resources/ggml-metal.metal",
+      "resources/demo/sample-meeting.m4a"
     ],
     "macOS": {
       "infoPlist": "Info.plist"
