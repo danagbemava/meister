@@ -58,6 +58,16 @@ export default {
         // Focus ring — accent at 50% alpha, reused in component focus states.
         "focus-ring":             "rgb(var(--color-accent-rgb) / 0.5)",
       },
+      borderRadius: {
+        window:  "12px",
+        card:    "10px",
+        control: "7px",
+        field:   "5px",
+      },
+      boxShadow: {
+        overlay: "var(--shadow-overlay)",
+        island:  "0 4px 18px rgba(0 0 0 / 0.10), 0 0.5px 1.5px rgba(0 0 0 / 0.08)",
+      },
     },
   },
   plugins: [],

@@ -55,6 +55,13 @@
   --color-status-error-rgb:   255 59 48;
   --color-status-info-rgb:    0 122 255;
 
+  /* Liquid Glass materials (Phase 1 overhaul) */
+  --glass-overlay-bg:        rgba(255 255 255 / 0.55);
+  --glass-overlay-border:    rgba(255 255 255 / 0.35);
+  --glass-overlay-highlight: rgba(255 255 255 / 0.50);
+  --glass-edge-bg:           rgba(242 242 247 / 0.60);
+  --shadow-overlay: 0 10px 38px rgba(0 0 0 / 0.22), 0 1px 3px rgba(0 0 0 / 0.12);
+
   /* Sidebar — Source List (slice #6.2) */
   --sidebar-row-hover:        rgb(0 0 0 / 0.05);
   --sidebar-row-selected:     rgb(var(--color-accent-rgb) / 1);
@@ -120,6 +127,13 @@
   --color-status-error-rgb:   255 69 58;
   --color-status-info-rgb:    10 132 255;
 
+  /* Liquid Glass materials (Phase 1 overhaul) */
+  --glass-overlay-bg:        rgba(40 40 44 / 0.55);
+  --glass-overlay-border:    rgba(255 255 255 / 0.14);
+  --glass-overlay-highlight: rgba(255 255 255 / 0.08);
+  --glass-edge-bg:           rgba(30 30 30 / 0.55);
+  --shadow-overlay: 0 10px 38px rgba(0 0 0 / 0.50), 0 1px 3px rgba(0 0 0 / 0.30);
+
   /* Sidebar — Source List (slice #6.2) */
   --sidebar-row-hover:        rgb(255 255 255 / 0.06);
   --sidebar-row-selected:     rgb(var(--color-accent-rgb) / 1);
@@ -150,6 +164,12 @@
   --sidebar-row-hover:    rgb(255 255 255 / 0.10);
   --sidebar-divider:      rgb(255 255 255 / 0.18);
   --sidebar-search-bg:    rgb(255 255 255 / 0.10);
+
+  /* Glass collapses to opaque control background */
+  --glass-overlay-bg:        rgb(var(--color-control-background-rgb));
+  --glass-overlay-border:    var(--color-separator);
+  --glass-overlay-highlight: transparent;
+  --glass-edge-bg:           rgb(var(--color-control-background-rgb));
 }
 
 /* Sidebar folder glyph (slice #6.2) */
@@ -164,6 +184,28 @@
 .sidebar-folder-green  { background: linear-gradient(180deg, var(--folder-green-from),  var(--folder-green-to)); }
 .sidebar-folder-purple { background: linear-gradient(180deg, var(--folder-purple-from), var(--folder-purple-to)); }
 .sidebar-folder-orange { background: linear-gradient(180deg, var(--folder-orange-from), var(--folder-orange-to)); }
+
+/* Liquid Glass utility materials. backdrop-filter is dropped (and the bg is
+ * already opaque via token overrides) under reduce-transparency. */
+.glass-overlay {
+  background: var(--glass-overlay-bg);
+  border: 0.5px solid var(--glass-overlay-border);
+  box-shadow: inset 0 1px 0 0 var(--glass-overlay-highlight), var(--shadow-overlay);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+}
+
+.glass-edge {
+  background: var(--glass-edge-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+[data-reduce-transparency="true"] .glass-overlay,
+[data-reduce-transparency="true"] .glass-edge {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 
 /* Typography scale — Apple macOS HIG. Classes: text-{name}. */
 /* Tailwind reads these via fontSize entries; line-heights in the same var. */
