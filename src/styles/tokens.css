@@ -58,9 +58,10 @@
   /* Liquid Glass materials (Phase 1 overhaul) */
   --glass-overlay-bg:        rgba(255 255 255 / 0.55);
   --glass-overlay-border:    rgba(255 255 255 / 0.35);
-  --glass-overlay-highlight: rgba(255 255 255 / 0.50);
-  --glass-edge-bg:           rgba(242 242 247 / 0.60);
+  --glass-overlay-highlight: rgba(255 255 255 / 0.5);
+  --glass-edge-bg:           rgb(var(--color-window-background-rgb) / 0.60);
   --shadow-overlay: 0 10px 38px rgba(0 0 0 / 0.22), 0 1px 3px rgba(0 0 0 / 0.12);
+  --shadow-island: 0 4px 18px rgba(0 0 0 / 0.10), 0 0.5px 1.5px rgba(0 0 0 / 0.08);
 
   /* Sidebar — Source List (slice #6.2) */
   --sidebar-row-hover:        rgb(0 0 0 / 0.05);
@@ -128,11 +129,14 @@
   --color-status-info-rgb:    10 132 255;
 
   /* Liquid Glass materials (Phase 1 overhaul) */
+  /* Slightly blue-shifted vs window background (30 30 30) — intentional
+   * cool tint for the glass material; do not "fix" to 40 40 40. */
   --glass-overlay-bg:        rgba(40 40 44 / 0.55);
   --glass-overlay-border:    rgba(255 255 255 / 0.14);
   --glass-overlay-highlight: rgba(255 255 255 / 0.08);
-  --glass-edge-bg:           rgba(30 30 30 / 0.55);
+  --glass-edge-bg:           rgb(var(--color-window-background-rgb) / 0.55);
   --shadow-overlay: 0 10px 38px rgba(0 0 0 / 0.50), 0 1px 3px rgba(0 0 0 / 0.30);
+  --shadow-island: 0 6px 22px rgba(0 0 0 / 0.35), 0 0.5px 1.5px rgba(0 0 0 / 0.25);
 
   /* Sidebar — Source List (slice #6.2) */
   --sidebar-row-hover:        rgb(255 255 255 / 0.06);

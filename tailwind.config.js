@@ -66,7 +66,7 @@ export default {
       },
       boxShadow: {
         overlay: "var(--shadow-overlay)",
-        island:  "0 4px 18px rgba(0 0 0 / 0.10), 0 0.5px 1.5px rgba(0 0 0 / 0.08)",
+        island:  "var(--shadow-island)",
       },
     },
   },
