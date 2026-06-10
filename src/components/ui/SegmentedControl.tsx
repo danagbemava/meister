@@ -1,7 +1,7 @@
 import { createContext, forwardRef, useContext } from "react";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { cn } from "../../lib/cn";
-import { type Size, focusClasses } from "./_shared";
+import { type Size, focusClasses, pressClasses } from "./_shared";
 
 type RootProps = {
   value: string;
@@ -56,7 +56,7 @@ const Root = forwardRef<HTMLDivElement, RootProps>(function SegmentedControlRoot
         }}
         aria-label={ariaLabel}
         className={cn(
-          "inline-flex items-center bg-fill-tertiary rounded-md p-0.5 gap-0.5",
+          "inline-flex items-center bg-fill-tertiary rounded-control p-0.5 gap-0.5",
           containerHeight[size],
           className,
         )}
@@ -85,7 +85,7 @@ const Item = forwardRef<HTMLButtonElement, ItemProps>(function SegmentedControlI
       value={value}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center justify-center rounded-sm font-medium transition-colors",
+        "inline-flex items-center justify-center rounded-field font-medium",
         "text-label-secondary hover:text-label-primary",
         "data-[state=on]:bg-control-background data-[state=on]:text-label-primary data-[state=on]:shadow-[0_0_0_0.5px_rgb(0_0_0/0.04)]",
         "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -93,6 +93,7 @@ const Item = forwardRef<HTMLButtonElement, ItemProps>(function SegmentedControlI
         itemPad[size],
         itemFont[size],
         focusClasses,
+        pressClasses,
         className,
       )}
     >
