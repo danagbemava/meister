@@ -15,3 +15,7 @@ export function sizeClasses(size: Size): string {
 /** Focus ring shown only on keyboard focus, matching macOS HIG. */
 export const focusClasses =
   "outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-0";
+
+/** AppKit-feel press: tiny scale-down, transform+color transitions only. */
+export const pressClasses =
+  "active:scale-[0.97] transition-[transform,background-color,color,border-color,box-shadow] duration-100 select-none";

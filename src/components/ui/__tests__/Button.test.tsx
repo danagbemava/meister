@@ -77,4 +77,18 @@ describe("Button", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("uses the control radius and pressed scale", () => {
+    render(<Button>Go</Button>);
+    const btn = screen.getByRole("button", { name: "Go" });
+    expect(btn.className).toContain("rounded-control");
+    expect(btn.className).toContain("active:scale-[0.97]");
+    expect(btn.className).not.toContain("cursor-pointer");
+  });
+
+  it("primary variant carries the glass top highlight", () => {
+    render(<Button variant="primary">Go</Button>);
+    const btn = screen.getByRole("button", { name: "Go" });
+    expect(btn.className).toContain("shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)]");
+  });
 });

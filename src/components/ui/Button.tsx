@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { cn } from "../../lib/cn";
-import { Size, sizeClasses, focusClasses } from "./_shared";
+import { Size, sizeClasses, focusClasses, pressClasses } from "./_shared";
 import { Icon, type IconName, type IconSize } from "./Icon";
 
 type Variant = "primary" | "secondary" | "destructive" | "ghost";
@@ -14,7 +14,7 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    "bg-accent text-accent-label hover:bg-accent-hover active:bg-accent-pressed",
+    "bg-accent text-accent-label hover:bg-accent-hover active:bg-accent-pressed shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)] active:shadow-none",
   secondary:
     "bg-fill-tertiary text-label-primary hover:bg-fill-secondary active:bg-fill-primary",
   destructive:
@@ -72,7 +72,8 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       type={type}
       aria-label={ariaLabel}
       className={cn(
-        "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center rounded-control font-medium disabled:opacity-50 disabled:cursor-not-allowed",
+        pressClasses,
         sizeClasses(size),
         focusClasses,
         variantClasses[variant],
