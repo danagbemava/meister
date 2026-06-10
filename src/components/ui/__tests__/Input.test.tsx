@@ -32,4 +32,10 @@ describe("Input", () => {
     render(<Input ref={ref} />);
     expect(ref.current).toBeInstanceOf(HTMLInputElement);
   });
+
+  it("applies rounded-control radius class", () => {
+    render(<Input />);
+    const input = screen.getByRole("textbox");
+    expect(input.className).toContain("rounded-control");
+  });
 });

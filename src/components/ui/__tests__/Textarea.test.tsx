@@ -22,4 +22,10 @@ describe("Textarea", () => {
     render(<Textarea ref={ref} />);
     expect(ref.current).toBeInstanceOf(HTMLTextAreaElement);
   });
+
+  it("applies rounded-control radius class", () => {
+    render(<Textarea />);
+    const textarea = screen.getByRole("textbox");
+    expect(textarea.className).toContain("rounded-control");
+  });
 });
