@@ -148,7 +148,7 @@ export default function App() {
           }}
         />
       </div>
-      <div className="flex-1 rounded-xl bg-control-background overflow-hidden">
+      <div className="flex-1 rounded-window bg-control-background overflow-hidden border border-separator shadow-island">
         {selection.kind === "none" && (
           <EmptyState loading={loadingProjects} hasProjects={projects.length > 0} />
         )}
