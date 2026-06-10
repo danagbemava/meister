@@ -135,9 +135,11 @@ Cross-cutting, in `_shared.ts` where possible:
   HIG-style; pressed state drops the highlight.
 - **Radius migration:** `rounded-md` → `rounded-control` across Button, Input,
   Select, Textarea, SegmentedControl; Checkbox → `rounded-field`.
-- **Overlay materials:** ContextMenu content and Select dropdown get
+- **Overlay materials:** ContextMenu content (and any future popover) gets
   `.glass-overlay` + `rounded-card` + `--shadow-overlay`. Item hover uses the
-  accent-fill capsule look (already partially present in ContextMenu).
+  accent-fill capsule look (already partially present in ContextMenu). The
+  `Select` control is a native `<select>` — its dropdown is OS-rendered and
+  already native; only the closed control gets the radius/cursor pass.
 - **Focus rings:** unchanged (already HIG-correct, keyboard-only).
 
 ### 5. Cards & content surfaces
