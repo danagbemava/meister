@@ -86,35 +86,10 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     },
   }));
 
-  // Frame reporting → Rust for the native glass view.
+  // Retire native glass: disable the sidebar glass view once on mount.
   const sidebarRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const el = sidebarRef.current;
-    if (!el) return;
-    const report = () => {
-      const r = el.getBoundingClientRect();
-      try {
-        const maybe = invoke("report_sidebar_frame", {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-        }) as Promise<unknown> | undefined;
-        if (maybe && typeof (maybe as Promise<unknown>).catch === "function") {
-          (maybe as Promise<unknown>).catch(() => { /* command unavailable on non-macOS or before setup */ });
-        }
-      } catch {
-        /* command unavailable on non-macOS or before setup */
-      }
-    };
-    report();
-    const ro = new ResizeObserver(report);
-    ro.observe(el);
-    window.addEventListener("resize", report);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", report);
-    };
+    void Promise.resolve(invoke("set_sidebar_glass_enabled_cmd", { enabled: false })).catch(() => {});
   }, []);
 
   // Search filtering.
@@ -212,7 +187,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   return (
     <aside
       ref={sidebarRef}
-      className="w-60 h-full shrink-0 flex flex-col bg-transparent rounded-window border border-separator shadow-island overflow-hidden"
+      className="w-60 h-full shrink-0 flex flex-col bg-sidebar-background border-r border-separator overflow-hidden"
     >
       <div data-tauri-drag-region className="h-9 shrink-0" />
 
