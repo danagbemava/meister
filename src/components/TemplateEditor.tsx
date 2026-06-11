@@ -7,11 +7,15 @@ import { Button, Checkbox, Textarea } from "./ui";
 interface Props {
   template: Template;
   onChange: (t: Template) => void;
+  /** When the editor is mounted inside the collapsible template card, the card
+   *  header already shows the "Format template" label, so the editor's own
+   *  header row is redundant and is hidden. */
+  hideHeader?: boolean;
 }
 
 const TEMPLATE_EXTS = new Set(["md", "txt", "docx"]);
 
-export default function TemplateEditor({ template, onChange }: Props) {
+export default function TemplateEditor({ template, onChange, hideHeader }: Props) {
   const [dragging, setDragging] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,9 +47,13 @@ export default function TemplateEditor({ template, onChange }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
-          Format Template
-        </label>
+        {hideHeader ? (
+          <span />
+        ) : (
+          <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
+            Format Template
+          </label>
+        )}
         <Button
           variant="ghost"
           size="sm"

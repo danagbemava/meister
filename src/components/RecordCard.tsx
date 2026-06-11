@@ -11,6 +11,13 @@ interface Props {
   /** Fired when a capture becomes active; pass `null` when it ends. The parent
    *  uses this to install a navigation guard (confirm before leaving). */
   onActiveChange?: (discard: (() => void) | null) => void;
+  /** When set, the component begins capturing on mount and renders nothing
+   *  while idle (the dashed idle well is suppressed — start is driven by the
+   *  parent's pill action instead). */
+  autoStart?: boolean;
+  /** Fired when the capture flow returns to idle (saved, discarded, or
+   *  retry-exhausted) so the parent can unmount this transient component. */
+  onDone?: () => void;
 }
 
 function formatElapsed(ms: number): string {
@@ -33,7 +40,7 @@ function pickMime(): string | undefined {
   return undefined;
 }
 
-export default function RecordCard({ onPicked, onActiveChange }: Props) {
+export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone }: Props) {
   const [state, setState] = useState<CaptureState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -74,6 +81,23 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
   useEffect(() => {
     return () => { stopStreamAndRecorder(); };
   }, []);
+
+  // When driven by a parent pill (autoStart), begin capturing on mount.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStart && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      void start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
+  // Once an auto-started capture returns to idle (saved/discarded), tell the
+  // parent so it can unmount this transient component.
+  useEffect(() => {
+    if (autoStart && autoStartedRef.current && state === "idle") onDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, state]);
 
   const discard = () => {
     const r = recorderRef.current;
@@ -191,6 +215,8 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
   const cardBase = "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
 
   if (state === "idle") {
+    // Driven by a parent pill: no idle well (onDone effect unmounts us).
+    if (autoStart) return null;
     return (
       <div
         className={`${cardBase} border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
