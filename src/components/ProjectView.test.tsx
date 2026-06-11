@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("../api/storage", () => ({
@@ -126,6 +126,20 @@ describe("ProjectView recordings rows", () => {
     expect(screen.getByRole("button", { name: /Standup/i })).toBeInTheDocument();
     await userEvent.click(row);
     expect(onSelect).toHaveBeenCalledWith("rec-1");
+  });
+
+  it("shows the 'new' status line for a freshly created recording (empty stages)", async () => {
+    vi.mocked(api.listProjects).mockResolvedValue([makeProject()]);
+    vi.mocked(api.listRecordings).mockResolvedValue([
+      makeRecording("rec-new", "Fresh recording", []),
+    ]);
+    renderView();
+
+    const row = await screen.findByRole("button", { name: /Fresh recording/i });
+    // A new recording (no stages) must NOT report itself as transcribed/formatted.
+    expect(row).not.toHaveTextContent(/Transcribed/i);
+    const status = within(row).getByText("new");
+    expect(status).toHaveClass("text-label-tertiary");
   });
 
   it("shows the empty-state line when there are no recordings", async () => {

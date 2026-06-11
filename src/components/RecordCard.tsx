@@ -78,8 +78,17 @@ export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone
     setStream(null);
   };
 
+  // Set when the component is being torn down (incl. StrictMode's first
+  // mount/unmount). An in-flight start() checks this after getUserMedia resolves
+  // and bails (stopping the stream) so a late-resolving capture can't leak a mic.
+  const cancelledRef = useRef(false);
+
   useEffect(() => {
-    return () => { stopStreamAndRecorder(); };
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+      stopStreamAndRecorder();
+    };
   }, []);
 
   // When driven by a parent pill (autoStart), begin capturing on mount.
@@ -119,6 +128,12 @@ export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone
     chunksRef.current = [];
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // The component unmounted (e.g. StrictMode double-mount) while the mic
+      // permission was resolving — drop the stream instead of leaking it.
+      if (cancelledRef.current) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = mediaStream;
       setStream(mediaStream);
       const mime = pickMime();
@@ -208,8 +223,10 @@ export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone
   };
 
   const retry = () => {
-    setState("idle");
+    // Retry must actually restart capture, not transition through "idle" — under
+    // autoStart the onDone effect treats "idle" as "done" and unmounts us.
     setErrorMsg("");
+    void start();
   };
 
   const cardBase = "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";

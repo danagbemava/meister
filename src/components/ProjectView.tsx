@@ -395,6 +395,7 @@ export default function ProjectView({
             <RecordCallCard
               onPicked={(paths) => { onFilesPicked(paths); setAffordance(null); }}
               onActiveChange={onCaptureActiveChange}
+              onCancel={() => setAffordance(null)}
             />
           )}
           {affordance === "audio" && (

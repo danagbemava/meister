@@ -15,6 +15,9 @@ type CaptureState =
 interface Props {
   onPicked: (filePaths: string[]) => void;
   onActiveChange?: (discard: (() => void) | null) => void;
+  /** When provided, the idle card shows a cancel control and a completed
+   *  discard returns the user to the pills via this callback. */
+  onCancel?: () => void;
 }
 
 function formatElapsed(ms: number): string {
@@ -26,7 +29,7 @@ function formatElapsed(ms: number): string {
   return hh > 0 ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : `${pad(mm)}:${pad(ss)}`;
 }
 
-export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
+export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: Props) {
   const [state, setState] = useState<CaptureState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [micError, setMicError] = useState<string>("");
@@ -71,6 +74,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     setState("idle");
     setElapsedMs(0);
     accumulatedRef.current = 0;
+    onCancel?.();
   };
 
   const start = async () => {
@@ -168,9 +172,19 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
   if (state === "idle") {
     return (
       <div
-        className={`${cardBase} border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
+        className={`${cardBase} relative border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
         onClick={start}
       >
+        {onCancel && (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft="x"
+            aria-label="Cancel"
+            className="absolute top-2 right-2 text-label-tertiary hover:bg-fill-tertiary"
+            onClick={(e) => { e.stopPropagation(); onCancel(); }}
+          />
+        )}
         <Icon name="waveform" size="lg" className="text-label-tertiary" />
         <p className="text-body text-label-secondary">Record call</p>
         <label
