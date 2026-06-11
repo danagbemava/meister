@@ -193,7 +193,7 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
   if (state === "idle") {
     return (
       <div
-        className={`${cardBase} border-dashed border-separator hover:border-separator bg-fill-quaternary`}
+        className={`${cardBase} border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
         onClick={start}
       >
         <Icon name="mic" size="lg" className="text-label-tertiary" />
