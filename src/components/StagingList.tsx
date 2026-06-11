@@ -59,7 +59,7 @@ export default function StagingList({
   };
 
   return (
-    <div className="rounded-card border border-separator bg-fill-quaternary p-3 flex flex-col gap-2">
+    <div className="rounded-card border border-separator bg-control-background shadow-card p-3 flex flex-col gap-2">
       <ul className="flex flex-col">
         {paths.map((p, idx) => (
           <li

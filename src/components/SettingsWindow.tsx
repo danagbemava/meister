@@ -9,9 +9,9 @@ export default function SettingsWindow() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrolled = useScrollEdge(scrollRef);
   return (
-    <div className="h-screen flex flex-col bg-[rgb(var(--color-window-background-rgb))]">
+    <div className="h-screen flex flex-col bg-window-background">
       <Toolbar data-tauri-drag-region scrolled={scrolled}>
-        <h1 className="text-title-2 font-semibold">Settings</h1>
+        <h1 className="font-display text-[22px] font-semibold">Settings</h1>
       </Toolbar>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-8">
         {settings ? (

@@ -32,7 +32,7 @@ export default function StageCard({ kind, status, error, subtitle, progress, onR
     status === "completed" ? "border-status-success/30 bg-status-success/10"
     : status === "running" ? "border-accent/40 bg-accent/10"
     : status === "failed" ? "border-status-error/30 bg-status-error/10"
-    : "border-separator bg-fill-quaternary";
+    : "border-separator bg-control-background shadow-card";
 
   const statusText =
     status === "completed" ? "Completed"
