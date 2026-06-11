@@ -32,7 +32,7 @@ export default function StageCard({ kind, status, error, subtitle, progress, onR
     status === "completed" ? "border-status-success/30 bg-status-success/10"
     : status === "running" ? "border-accent/40 bg-accent/10"
     : status === "failed" ? "border-status-error/30 bg-status-error/10"
-    : "border-separator bg-control-background";
+    : "border-separator bg-fill-quaternary";
 
   const statusText =
     status === "completed" ? "Completed"
@@ -41,7 +41,7 @@ export default function StageCard({ kind, status, error, subtitle, progress, onR
     : "Pending";
 
   return (
-    <div className={`rounded-xl border p-4 flex flex-col gap-2 ${tone}`}>
+    <div className={`rounded-card border p-4 flex flex-col gap-2 ${tone}`}>
       <div className="flex items-center gap-3">
         <Icon name={ICONS[kind]} size="md" className="text-label-secondary" />
         <div className="flex-1">

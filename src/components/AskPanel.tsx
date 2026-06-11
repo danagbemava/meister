@@ -92,7 +92,7 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
                                   key={i}
                                   type="button"
                                   onClick={() => onCitationClick(c)}
-                                  className="text-left text-footnote bg-control-background border border-separator rounded-md px-2 py-1 hover:border-tint transition-colors"
+                                  className="text-left text-footnote bg-fill-quaternary border border-separator rounded-control px-2 py-1 hover:border-tint transition-colors"
                                 >
                                   &#x201C;{c.quote}&#x201D;
                                 </button>
@@ -102,7 +102,7 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
                               <span
                                 key={i}
                                 title="couldn't locate in transcript"
-                                className="text-left text-footnote bg-control-background border border-separator rounded-md px-2 py-1 text-label-tertiary cursor-help"
+                                className="text-left text-footnote bg-fill-quaternary border border-separator rounded-control px-2 py-1 text-label-tertiary cursor-help"
                               >
                                 &#x201C;{c.quote}&#x201D;
                               </span>

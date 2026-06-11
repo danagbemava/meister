@@ -163,18 +163,18 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
   };
 
   const cardBase =
-    "rounded-xl border-2 flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
+    "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
 
   if (state === "idle") {
     return (
       <div
-        className={`${cardBase} border-dashed border-separator hover:border-separator bg-control-background cursor-pointer`}
+        className={`${cardBase} border-dashed border-separator hover:border-separator bg-fill-quaternary`}
         onClick={start}
       >
         <Icon name="waveform" size="lg" className="text-label-tertiary" />
         <p className="text-body text-label-secondary">Record call</p>
         <label
-          className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none"
+          className="flex items-center gap-2 text-footnote text-label-secondary select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <Checkbox
@@ -212,7 +212,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
   if (state === "recording" || state === "paused") {
     return (
-      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-control-background`}>
+      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-fill-quaternary`}>
         <div className="w-full flex items-center gap-2">
           <span
             className={`w-2 h-2 rounded-full ${
@@ -264,7 +264,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
   if (state === "saving") {
     return (
-      <div className={`${cardBase} border-solid border-separator bg-control-background`}>
+      <div className={`${cardBase} border-solid border-separator bg-fill-quaternary`}>
         <span className="spinner" />
         <p className="text-body text-label-secondary">Mixing tracks…</p>
       </div>
