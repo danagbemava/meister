@@ -62,7 +62,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
         onDrop={handleDrop}
       >
         {dragging && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-accent/10 border-2 border-accent z-10 pointer-events-none">
+          <div className="absolute inset-0 flex items-center justify-center rounded-control bg-accent/10 border-2 border-accent z-10 pointer-events-none">
             <p className="text-accent font-medium">Drop template file here</p>
           </div>
         )}
@@ -83,7 +83,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
         />
       </div>
       <div className="mt-1">
-        <label className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-footnote text-label-secondary select-none">
           <Checkbox
             size="sm"
             checked={template.matchStyle ?? false}

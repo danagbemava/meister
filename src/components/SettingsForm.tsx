@@ -108,7 +108,7 @@ export default function SettingsForm({ settings, onChange }: Props) {
           <div className="flex flex-col gap-1">
             {EXPORT_FORMATS.map(({ id, label, desc }) => (
               <label key={id}
-                className="flex items-center gap-2 text-body text-label-primary cursor-pointer">
+                className="flex items-center gap-2 text-body text-label-primary">
                 <input
                   type="radio"
                   name="defaultExportFormat"
@@ -143,7 +143,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-footnote font-semibold text-label-secondary uppercase tracking-wider">{title}</h2>
-      {children}
+      <div className="bg-fill-quaternary border border-separator rounded-card flex flex-col gap-3 p-4">
+        {children}
+      </div>
     </div>
   );
 }

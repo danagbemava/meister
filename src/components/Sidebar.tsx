@@ -329,7 +329,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                     aria-label={`${p.name}, project, ${recs.length} recording${recs.length === 1 ? "" : "s"}`}
                     aria-current={isSel ? "page" : undefined}
                     aria-expanded={expanded}
-                    className="group mx-2 my-px h-9 px-2.5 rounded-md flex items-center gap-2 text-body cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    className="group mx-2 my-px h-9 px-2.5 rounded-control flex items-center gap-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                     style={
                       isSel
                         ? { background: "var(--sidebar-row-selected)", color: "var(--sidebar-row-selected-text)" }
@@ -400,7 +400,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                         }}
                         aria-label={`${rec.name}, recording`}
                         aria-current={recSel ? "page" : undefined}
-                        className="mx-2 my-px h-[34px] pl-[30px] pr-2.5 rounded-md flex items-center gap-2 text-body cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        className="mx-2 my-px h-[34px] pl-[30px] pr-2.5 rounded-control flex items-center gap-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                         style={
                           recSel
                             ? { background: "var(--sidebar-row-selected)", color: "var(--sidebar-row-selected-text)" }

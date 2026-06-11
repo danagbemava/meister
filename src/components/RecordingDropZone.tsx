@@ -43,7 +43,7 @@ export default function RecordingDropZone({ onPicked }: Props) {
 
   return (
     <div
-      className={`rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer py-10 transition-colors
+      className={`rounded-card border-2 border-dashed flex flex-col items-center justify-center gap-2 py-10 transition-colors
         ${dragging
           ? "border-accent bg-accent/10"
           : "border-separator hover:border-separator bg-fill-quaternary"}`}
