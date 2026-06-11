@@ -9,6 +9,7 @@ export default {
       fontFamily: {
         sans: ["-apple-system", "BlinkMacSystemFont", "SF Pro Display", "Segoe UI", "sans-serif"],
         mono: ["SF Mono", "JetBrains Mono", "Fira Code", "monospace"],
+        display: ["Georgia", "Iowan Old Style", "Times New Roman", "serif"],
       },
       fontSize: {
         // macOS HIG type scale. Each entry: [size, { lineHeight, fontWeight }]
@@ -67,6 +68,7 @@ export default {
       boxShadow: {
         overlay: "var(--shadow-overlay)",
         island:  "var(--shadow-island)",
+        card:    "var(--shadow-card)",
       },
     },
   },

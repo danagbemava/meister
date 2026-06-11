@@ -3,14 +3,12 @@ import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import SettingsWindow from "./components/SettingsWindow";
-import { initAppearance } from "./lib/appearance";
-import { initAccent } from "./lib/accent";
+import { initTheme } from "./lib/theme";
 import { initReduceTransparency } from "./lib/reduceTransparency";
 import "./styles/tokens.css";
 import "./index.css";
 
-initAppearance();
-void initAccent();
+initTheme();
 void initReduceTransparency();
 
 const label = getCurrentWindow().label;
