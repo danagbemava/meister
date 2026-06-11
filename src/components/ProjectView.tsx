@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import TemplateEditor from "./TemplateEditor";
 import RecordingDropZone from "./RecordingDropZone";
@@ -8,6 +8,7 @@ import StagingList from "./StagingList";
 import { api } from "../api/storage";
 import type { Project, Recording } from "../types/storage";
 import { Button, Input, Textarea, Toolbar } from "./ui";
+import { useScrollEdge } from "../lib/useScrollEdge";
 
 interface Props {
   projectId: string;
@@ -43,6 +44,8 @@ export default function ProjectView({
   const [draftName, setDraftName] = useState("");
   const [staging, setStaging] = useState<string[]>([]);
   const [stagingName, setStagingName] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrolled = useScrollEdge(scrollRef);
 
   const load = useCallback(async () => {
     const list = await api.listProjects();
@@ -125,7 +128,7 @@ export default function ProjectView({
 
   return (
     <div className="h-full flex flex-col">
-      <Toolbar data-tauri-drag-region>
+      <Toolbar data-tauri-drag-region scrolled={scrolled}>
         {renaming ? (
           <Input
             autoFocus
@@ -162,7 +165,7 @@ export default function ProjectView({
           Delete project
         </Button>
       </Toolbar>
-      <div className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-8">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-8">
       <TemplateEditor
         template={project.template}
         onChange={(template) => save({ ...project, template })}

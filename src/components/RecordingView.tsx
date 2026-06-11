@@ -15,6 +15,7 @@ import {
 } from "../types/storage";
 import { exportRecording } from "../lib/exportRecording";
 import { useGlobalSettings } from "../lib/useGlobalSettings";
+import { useScrollEdge } from "../lib/useScrollEdge";
 
 export interface RecordingViewHandle {
   runPipeline: () => void;
@@ -135,6 +136,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   const runRef = useRef<() => void>(() => {});
   const exportFlowRef = useRef<() => void>(() => {});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrolled = useScrollEdge(scrollRef);
 
   useImperativeHandle(ref, () => ({
     runPipeline: () => { runRef.current(); },
@@ -300,7 +303,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   return (
     <div className="h-full flex flex-col">
-      <Toolbar data-tauri-drag-region>
+      <Toolbar data-tauri-drag-region scrolled={scrolled}>
         {renamingRec ? (
           <Input
             autoFocus
@@ -339,7 +342,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
         </Button>
       </Toolbar>
       <div className="flex-1 min-h-0 flex">
-      <div className="flex-1 min-w-0 min-h-0 p-8 flex flex-col gap-6">
+      <div ref={scrollRef} className="flex-1 min-w-0 min-h-0 overflow-y-auto scrollable p-8 flex flex-col gap-6">
         <div className="shrink-0 flex flex-col gap-1">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
