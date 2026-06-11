@@ -62,6 +62,7 @@
   --glass-edge-bg:           rgb(var(--color-window-background-rgb) / 0.60);
   --shadow-overlay: 0 10px 38px rgba(0 0 0 / 0.22), 0 1px 3px rgba(0 0 0 / 0.12);
   --shadow-island: 0 4px 18px rgba(0 0 0 / 0.10), 0 0.5px 1.5px rgba(0 0 0 / 0.08);
+  --shadow-card: 0 1px 3px rgba(0 0 0 / 0.10), 0 4px 16px rgba(0 0 0 / 0.06);
 
   /* Sidebar — Source List (slice #6.2) */
   --sidebar-row-hover:        rgb(0 0 0 / 0.05);
@@ -137,6 +138,7 @@
   --glass-edge-bg:           rgb(var(--color-window-background-rgb) / 0.55);
   --shadow-overlay: 0 10px 38px rgba(0 0 0 / 0.50), 0 1px 3px rgba(0 0 0 / 0.30);
   --shadow-island: 0 6px 22px rgba(0 0 0 / 0.35), 0 0.5px 1.5px rgba(0 0 0 / 0.25);
+  --shadow-card: 0 1px 3px rgba(0 0 0 / 0.3), 0 4px 16px rgba(0 0 0 / 0.18);
 
   /* Sidebar — Source List (slice #6.2) */
   --sidebar-row-hover:        rgb(255 255 255 / 0.06);

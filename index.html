@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/meister.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Meister</title>
+    <script>
+      // Apply the persisted theme before first paint to avoid a flash of the
+      // default light tokens. Mirrors src/lib/theme.ts (keep keys in sync).
+      (function () {
+        try {
+          var themes = { "ink-indigo": "dark", "forest-brass": "dark", "plum-rose": "dark", "manuscript": "light" };
+          var k = localStorage.getItem("meister-theme");
+          if (!(k in themes)) k = "ink-indigo";
+          document.documentElement.dataset.theme = k;
+          document.documentElement.dataset.appearance = themes[k];
+        } catch (e) { /* default tokens apply */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
