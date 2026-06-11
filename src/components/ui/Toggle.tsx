@@ -27,7 +27,7 @@ export const Toggle = forwardRef<
     <Switch.Root
       ref={ref}
       className={cn(
-        "group inline-flex shrink-0 items-center rounded-full bg-fill-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed data-[state=checked]:bg-accent",
+        "group/switch inline-flex shrink-0 items-center rounded-full bg-fill-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed data-[state=checked]:bg-accent",
         trackSize[size],
         focusClasses,
         className,
@@ -36,7 +36,7 @@ export const Toggle = forwardRef<
     >
       <Switch.Thumb
         className={cn(
-          "block rounded-full bg-white transition-transform shadow-sm group-active:scale-x-110",
+          "block rounded-full bg-white transition-transform shadow-sm group-active/switch:scale-x-110",
           thumbSize[size],
         )}
       />

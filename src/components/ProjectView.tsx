@@ -233,7 +233,7 @@ export default function ProjectView({
                   <button
                     type="button"
                     onClick={() => void onSelectRecording(r.id)}
-                    className="w-full text-left text-body text-label-secondary px-3 py-1.5 rounded hover:bg-fill-tertiary cursor-pointer"
+                    className="w-full text-left text-body text-label-secondary px-3 py-1.5 rounded hover:bg-fill-tertiary"
                   >
                     {r.name}
                   </button>

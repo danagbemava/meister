@@ -218,7 +218,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
 
       <div className="px-3 pb-2 shrink-0">
         <div
-          className="flex items-center gap-2 h-8 px-2.5 rounded-lg"
+          className="flex items-center gap-2 h-8 px-2.5 rounded-control"
           style={{
             background: "var(--sidebar-search-bg)",
             border: "1px solid var(--sidebar-search-border)",
