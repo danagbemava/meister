@@ -17,7 +17,7 @@ const Root = forwardRef<HTMLDivElement, RootProps>(function Toolbar(
       className={cn(
         "sticky top-0 z-10 flex h-11 items-center gap-2 px-4",
         "border-b border-transparent transition-colors duration-150",
-        "data-[scrolled]:glass-edge data-[scrolled]:border-separator",
+        "data-[scrolled]:bg-window-background data-[scrolled]:border-separator",
         className,
       )}
       {...rest}

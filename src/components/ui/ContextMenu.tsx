@@ -14,7 +14,7 @@ const Content = forwardRef<HTMLDivElement, ContentProps>(function ContextMenuCon
         ref={ref}
         collisionPadding={8}
         className={cn(
-          "z-50 min-w-[10rem] overflow-hidden rounded-card glass-overlay p-1",
+          "z-50 min-w-[10rem] overflow-hidden rounded-card bg-control-background border border-separator shadow-card p-1",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
