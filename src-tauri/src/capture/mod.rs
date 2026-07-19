@@ -12,6 +12,7 @@ pub mod amplitude;
 pub mod cleanup;
 pub mod mic_audio;
 pub mod mix;
+pub mod power;
 pub mod system_audio;
 
 pub struct CallCaptureSession {
@@ -33,6 +34,11 @@ pub struct CallCaptureSession {
     /// Kept alive for the lifetime of the session; dropped here stops the
     /// 30 fps drain task. Audio callbacks each hold their own `Arc` clone.
     pub _amplitude: Arc<amplitude::AmplitudeEmitter>,
+    /// Keeps the display awake while recording — ScreenCaptureKit capture is
+    /// display-bound and macOS kills the stream when the display sleeps.
+    /// `None` when the assertion couldn't be taken (recording still proceeds).
+    /// Released automatically when the session is finalized or discarded.
+    pub _display_assertion: Option<power::DisplaySleepAssertion>,
 }
 
 #[derive(Default)]
@@ -122,8 +128,35 @@ pub fn begin_session(
     // recording reveals which path survives a VoIP call.
     let sck_mic_arg = if include_mic { Some(sck_mic_wav.as_path()) } else { None };
 
+    // Keep the display awake for the whole session. Best-effort: a recording
+    // without the assertion is still better than no recording, it just becomes
+    // vulnerable to display sleep killing the SCStream mid-call.
+    let display_assertion = match power::DisplaySleepAssertion::create("Meister is recording a call")
+    {
+        Ok(a) => Some(a),
+        Err(e) => {
+            eprintln!(
+                "[capture] display-sleep assertion failed ({e}); \
+                 recording continues but will stop if the display sleeps"
+            );
+            None
+        }
+    };
+
+    // Surface an unexpected SCStream death (display sleep, lock, replayd
+    // restart) to the UI so the user finds out during the call, not after.
+    let app_for_stop = app.clone();
+    let id_for_stop = id.clone();
+    let on_stream_stopped: Box<dyn Fn(Option<String>) + Send + Sync> = Box::new(move |error| {
+        use tauri::Emitter;
+        let _ = app_for_stop.emit(
+            "call-capture-stream-stopped",
+            serde_json::json!({ "sessionId": id_for_stop, "error": error }),
+        );
+    });
+
     // System audio first — if permission isn't granted, we bail.
-    let system_handle = match system_audio::start_system_capture(&system_wav, sck_mic_arg, paused.clone(), amplitude.clone()) {
+    let system_handle = match system_audio::start_system_capture(&system_wav, sck_mic_arg, paused.clone(), amplitude.clone(), on_stream_stopped) {
         Ok(h) => h,
         Err(e) if e == "not-authorized" => {
             let _ = std::fs::remove_dir_all(&dir);
@@ -162,6 +195,7 @@ pub fn begin_session(
         sample_rate: system_audio::SAMPLE_RATE,
         channels: system_audio::CHANNELS,
         _amplitude: amplitude,
+        _display_assertion: display_assertion,
     };
 
     registry.sessions.lock().unwrap().insert(id.clone(), session);

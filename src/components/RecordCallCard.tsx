@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../api/storage";
 import { Button, Checkbox, Icon } from "./ui";
 import RecordingWaveform from "./RecordingWaveform";
@@ -33,6 +34,7 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
   const [state, setState] = useState<CaptureState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [micError, setMicError] = useState<string>("");
+  const [streamWarning, setStreamWarning] = useState<string>("");
   const [includeMic, setIncludeMic] = useState(true);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -62,6 +64,41 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     return () => { stopTicker(); };
   }, []);
 
+  // The backend emits this when the ScreenCaptureKit stream dies mid-session
+  // (display sleep, screen lock, replayd restart). Recording keeps running but
+  // system audio is gone from that point — tell the user right away.
+  useEffect(() => {
+    if (!sessionId) {
+      setStreamWarning("");
+      return;
+    }
+    let cancelled = false;
+    let unlisten: UnlistenFn | undefined;
+    listen<{ sessionId: string; error: string | null }>(
+      "call-capture-stream-stopped",
+      (event) => {
+        if (cancelled || event.payload.sessionId !== sessionId) return;
+        setStreamWarning(
+          "System audio capture stopped unexpectedly — audio from this point on is not being recorded. Stop and save now.",
+        );
+      },
+    )
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch((e) => {
+        console.warn("RecordCallCard: stream-stopped listen failed", e);
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [sessionId]);
+
   const discard = async () => {
     const id = sessionRef.current;
     stopTicker();
@@ -80,6 +117,7 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
   const start = async () => {
     setErrorMsg("");
     setMicError("");
+    setStreamWarning("");
     setElapsedMs(0);
     accumulatedRef.current = 0;
     try {
@@ -164,6 +202,7 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     setState("idle");
     setErrorMsg("");
     setMicError("");
+    setStreamWarning("");
   };
 
   const cardBase =
@@ -251,6 +290,10 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
 
         {micError && (
           <p className="text-footnote text-status-warning">{micError}</p>
+        )}
+
+        {streamWarning && (
+          <p className="text-footnote text-status-error">{streamWarning}</p>
         )}
 
         <div className="w-full flex items-center gap-2">

@@ -42,6 +42,7 @@ use screencapturekit::prelude::{
     SCContentFilter, SCShareableContent, SCStream, SCStreamConfiguration, SCStreamOutputTrait,
     SCStreamOutputType,
 };
+use screencapturekit::stream::delegate_trait::StreamCallbacks;
 
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const CHANNELS: u16 = 2;
@@ -72,6 +73,37 @@ struct PendingWriter {
     init_failed: bool,
 }
 
+/// Once-latch that surfaces an *unexpected* SCStream stop to the caller.
+///
+/// SCStream dies asynchronously when the display it's bound to sleeps or
+/// locks, when replayd restarts, etc. The delegate can fire both
+/// `did_stop_with_error` and `stream_did_stop` for one event, and it also
+/// fires during our own teardown — this latch collapses all of that into at
+/// most one callback, and none at all once teardown has begun.
+struct StopNotifier {
+    /// Set by `SystemAudioHandle::drop` before the stream is released, so a
+    /// stop observed during expected teardown is not reported as a failure.
+    teardown: Arc<AtomicBool>,
+    notified: AtomicBool,
+    callback: Box<dyn Fn(Option<String>) + Send + Sync>,
+}
+
+impl StopNotifier {
+    fn notify(&self, error: Option<String>) {
+        if self.teardown.load(Ordering::Relaxed) {
+            return;
+        }
+        if self.notified.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        eprintln!(
+            "[capture/system_audio] SCStream stopped mid-session: {}",
+            error.as_deref().unwrap_or("(no error reported)"),
+        );
+        (self.callback)(error);
+    }
+}
+
 /// Opaque handle returned to the caller. `Drop` finalizes the WAV writer(s) and
 /// releases the SCStream. We box this as `dyn Any + Send` in the public API
 /// so the registry stays agnostic across capture backends.
@@ -84,10 +116,14 @@ struct SystemAudioHandle {
     /// `SCStreamOutputType::Microphone` handler writes here. Finalized on drop
     /// alongside the system writer.
     mic_writer: Option<Arc<Mutex<PendingWriter>>>,
+    /// Shared with the stream delegate; set before release so a delegate
+    /// callback fired by our own teardown isn't reported as a mid-session stop.
+    teardown: Arc<AtomicBool>,
 }
 
 impl Drop for SystemAudioHandle {
     fn drop(&mut self) {
+        self.teardown.store(true, Ordering::Relaxed);
         // Finalize the WAVs first so the headers are written while any in-flight
         // callback that still held the mutex has a chance to drain. The
         // stream release in SCStream::drop happens after this scope ends.
@@ -284,11 +320,17 @@ fn build_wav_spec_from(sb: &CMSampleBuffer) -> Result<hound::WavSpec, String> {
 /// stereo 48 kHz i16 WAV file. Returns a handle whose `Drop` tears everything
 /// down and finalizes the file. Returns `Err("not-authorized")` when Screen
 /// Recording permission has not been granted.
+///
+/// `on_stopped` fires at most once, and only if the stream dies while the
+/// handle is still alive (display sleep, replayd restart, …) — never for the
+/// stop caused by dropping the handle. The optional message is SCK's error
+/// description.
 pub fn start_system_capture(
     wav_path: &Path,
     mic_wav_path: Option<&Path>,
     paused: Arc<AtomicBool>,
     amplitude: Arc<super::amplitude::AmplitudeEmitter>,
+    on_stopped: Box<dyn Fn(Option<String>) + Send + Sync + 'static>,
 ) -> Result<Box<dyn std::any::Any + Send>, String> {
     // Enumerate shareable content. TCC denial surfaces here as a
     // NoShareableContent error from the Swift side.
@@ -351,7 +393,24 @@ pub fn start_system_capture(
         logged: AtomicBool::new(false),
     };
 
-    let mut stream = SCStream::new(&filter, &config);
+    // Delegate that reports an unexpected mid-session stream death (display
+    // sleep, screen lock, replayd restart, …). Without this the stream dies
+    // silently and we keep "recording" nothing until the user hits stop.
+    let teardown = Arc::new(AtomicBool::new(false));
+    let notifier = Arc::new(StopNotifier {
+        teardown: Arc::clone(&teardown),
+        notified: AtomicBool::new(false),
+        callback: on_stopped,
+    });
+    let delegate = {
+        let n_err = Arc::clone(&notifier);
+        let n_stop = Arc::clone(&notifier);
+        StreamCallbacks::new()
+            .on_error(move |e| n_err.notify(Some(e.to_string())))
+            .on_stop(move |err| n_stop.notify(err))
+    };
+
+    let mut stream = SCStream::new_with_delegate(&filter, &config, delegate);
     if stream
         .add_output_handler(output, SCStreamOutputType::Audio)
         .is_none()
@@ -399,6 +458,7 @@ pub fn start_system_capture(
         _stream: stream,
         writer,
         mic_writer,
+        teardown,
     }))
 }
 
@@ -433,5 +493,35 @@ mod tests {
         assert_eq!(s.channels, 2);
         assert_eq!(s.bits_per_sample, 16);
         assert_eq!(s.sample_format, hound::SampleFormat::Int);
+    }
+
+    use std::sync::atomic::AtomicUsize;
+
+    fn notifier_with_counter(teardown: bool) -> (Arc<StopNotifier>, Arc<AtomicUsize>) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_cb = Arc::clone(&count);
+        let n = Arc::new(StopNotifier {
+            teardown: Arc::new(AtomicBool::new(teardown)),
+            notified: AtomicBool::new(false),
+            callback: Box::new(move |_| {
+                count_cb.fetch_add(1, Ordering::Relaxed);
+            }),
+        });
+        (n, count)
+    }
+
+    #[test]
+    fn stop_notifier_fires_once_across_both_delegate_paths() {
+        let (n, count) = notifier_with_counter(false);
+        n.notify(Some("display sleep".into())); // did_stop_with_error
+        n.notify(None); // stream_did_stop for the same event
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn stop_notifier_is_silent_during_teardown() {
+        let (n, count) = notifier_with_counter(true);
+        n.notify(None);
+        assert_eq!(count.load(Ordering::Relaxed), 0);
     }
 }
