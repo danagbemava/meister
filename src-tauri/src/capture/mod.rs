@@ -145,14 +145,27 @@ pub fn begin_session(
 
     // Surface an unexpected SCStream death (display sleep, lock, replayd
     // restart) to the UI so the user finds out during the call, not after.
+    // The in-app event drives the recording-card warning; the system
+    // notification reaches the user when meister isn't the frontmost app —
+    // which is the normal case during a call.
     let app_for_stop = app.clone();
     let id_for_stop = id.clone();
     let on_stream_stopped: Box<dyn Fn(Option<String>) + Send + Sync> = Box::new(move |error| {
         use tauri::Emitter;
+        use tauri_plugin_notification::NotificationExt;
         let _ = app_for_stop.emit(
             "call-capture-stream-stopped",
             serde_json::json!({ "sessionId": id_for_stop, "error": error }),
         );
+        if let Err(e) = app_for_stop
+            .notification()
+            .builder()
+            .title("Recording interrupted")
+            .body("System audio capture stopped — audio from this point on is not being recorded. Stop and save now.")
+            .show()
+        {
+            eprintln!("[capture] stream-stopped notification failed: {e}");
+        }
     });
 
     // System audio first — if permission isn't granted, we bail.
