@@ -11,6 +11,13 @@ interface Props {
   /** Fired when a capture becomes active; pass `null` when it ends. The parent
    *  uses this to install a navigation guard (confirm before leaving). */
   onActiveChange?: (discard: (() => void) | null) => void;
+  /** When set, the component begins capturing on mount and renders nothing
+   *  while idle (the dashed idle well is suppressed — start is driven by the
+   *  parent's pill action instead). */
+  autoStart?: boolean;
+  /** Fired when the capture flow returns to idle (saved, discarded, or
+   *  retry-exhausted) so the parent can unmount this transient component. */
+  onDone?: () => void;
 }
 
 function formatElapsed(ms: number): string {
@@ -33,7 +40,7 @@ function pickMime(): string | undefined {
   return undefined;
 }
 
-export default function RecordCard({ onPicked, onActiveChange }: Props) {
+export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone }: Props) {
   const [state, setState] = useState<CaptureState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -71,9 +78,35 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
     setStream(null);
   };
 
+  // Set when the component is being torn down (incl. StrictMode's first
+  // mount/unmount). An in-flight start() checks this after getUserMedia resolves
+  // and bails (stopping the stream) so a late-resolving capture can't leak a mic.
+  const cancelledRef = useRef(false);
+
   useEffect(() => {
-    return () => { stopStreamAndRecorder(); };
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+      stopStreamAndRecorder();
+    };
   }, []);
+
+  // When driven by a parent pill (autoStart), begin capturing on mount.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStart && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      void start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
+  // Once an auto-started capture returns to idle (saved/discarded), tell the
+  // parent so it can unmount this transient component.
+  useEffect(() => {
+    if (autoStart && autoStartedRef.current && state === "idle") onDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, state]);
 
   const discard = () => {
     const r = recorderRef.current;
@@ -95,6 +128,12 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
     chunksRef.current = [];
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // The component unmounted (e.g. StrictMode double-mount) while the mic
+      // permission was resolving — drop the stream instead of leaking it.
+      if (cancelledRef.current) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = mediaStream;
       setStream(mediaStream);
       const mime = pickMime();
@@ -184,16 +223,20 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
   };
 
   const retry = () => {
-    setState("idle");
+    // Retry must actually restart capture, not transition through "idle" — under
+    // autoStart the onDone effect treats "idle" as "done" and unmounts us.
     setErrorMsg("");
+    void start();
   };
 
-  const cardBase = "rounded-xl border-2 flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
+  const cardBase = "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
 
   if (state === "idle") {
+    // Driven by a parent pill: no idle well (onDone effect unmounts us).
+    if (autoStart) return null;
     return (
       <div
-        className={`${cardBase} border-dashed border-separator hover:border-separator bg-control-background cursor-pointer`}
+        className={`${cardBase} border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
         onClick={start}
       >
         <Icon name="mic" size="lg" className="text-label-tertiary" />
@@ -205,7 +248,7 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
 
   if (state === "recording" || state === "paused") {
     return (
-      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-control-background`}>
+      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-fill-quaternary`}>
         <div className="w-full flex items-center gap-2">
           <span
             className={`w-2 h-2 rounded-full ${
@@ -253,7 +296,7 @@ export default function RecordCard({ onPicked, onActiveChange }: Props) {
 
   if (state === "saving") {
     return (
-      <div className={`${cardBase} border-solid border-separator bg-control-background`}>
+      <div className={`${cardBase} border-solid border-separator bg-fill-quaternary`}>
         <span className="spinner" />
         <p className="text-body text-label-secondary">Saving…</p>
       </div>

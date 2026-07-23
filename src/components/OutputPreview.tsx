@@ -98,16 +98,16 @@ export default function OutputPreview({
             value={formatted ?? ""}
             onChange={(e) => onFormattedChange(e.target.value)}
             spellCheck
-            className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable resize-none outline-none focus:border-tint"
+            className="flex-1 min-h-0 bg-control-background shadow-card border border-separator rounded-control p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable resize-none outline-none focus:border-tint"
             aria-label="Formatted output"
           />
         ) : (
-          <pre className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
+          <pre className="flex-1 min-h-0 bg-control-background shadow-card border border-separator rounded-control p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
             {formatted ?? ""}
           </pre>
         )
       ) : (
-        <pre className="flex-1 min-h-0 bg-control-background border border-separator rounded-xl p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
+        <pre className="flex-1 min-h-0 bg-fill-quaternary border border-separator rounded-control p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
           {renderTranscript()}
         </pre>
       )}

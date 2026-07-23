@@ -16,7 +16,7 @@ export const Select = forwardRef<HTMLSelectElement, Props>(function Select(
     <select
       ref={ref}
       className={cn(
-        "w-full bg-fill-tertiary border border-separator text-label-primary rounded-md transition-colors appearance-none pr-8 disabled:opacity-50 disabled:cursor-not-allowed aria-invalid:border-status-error focus-visible:border-accent",
+        "w-full bg-fill-tertiary border border-separator text-label-primary rounded-control transition-colors appearance-none pr-8 disabled:opacity-50 disabled:cursor-not-allowed aria-invalid:border-status-error focus-visible:border-accent",
         sizeClasses(size),
         focusClasses,
         CHEVRON_BG,

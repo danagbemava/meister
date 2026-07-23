@@ -52,4 +52,14 @@ describe("SegmentedControl", () => {
       screen.getByRole("radio", { name: "A" }).className,
     ).toMatch(/h-7/);
   });
+
+  it("container uses control radius; items press-scale", () => {
+    render(
+      <SegmentedControl value="a" onValueChange={() => {}} aria-label="view">
+        <SegmentedControl.Item value="a">A</SegmentedControl.Item>
+      </SegmentedControl>,
+    );
+    const item = screen.getByRole("radio", { name: "A" });
+    expect(item.className).toContain("active:scale-[0.97]");
+  });
 });

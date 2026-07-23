@@ -12,6 +12,7 @@ pub mod amplitude;
 pub mod cleanup;
 pub mod mic_audio;
 pub mod mix;
+pub mod power;
 pub mod system_audio;
 
 pub struct CallCaptureSession {
@@ -19,6 +20,9 @@ pub struct CallCaptureSession {
     pub session_dir: PathBuf,
     pub system_wav: PathBuf,
     pub mic_wav: Option<PathBuf>,
+    /// SCStream-native microphone track, captured in parallel with `mic_wav`
+    /// (cpal) while we validate that the OS mic tap survives VoIP calls.
+    pub sck_mic_wav: Option<PathBuf>,
     pub paused: Arc<AtomicBool>,
     /// Keep-alive handles — dropping these tears the capture down.
     /// Boxed `dyn Any + Send` so the registry is agnostic to the exact
@@ -30,6 +34,11 @@ pub struct CallCaptureSession {
     /// Kept alive for the lifetime of the session; dropped here stops the
     /// 30 fps drain task. Audio callbacks each hold their own `Arc` clone.
     pub _amplitude: Arc<amplitude::AmplitudeEmitter>,
+    /// Keeps the display awake while recording — ScreenCaptureKit capture is
+    /// display-bound and macOS kills the stream when the display sleeps.
+    /// `None` when the assertion couldn't be taken (recording still proceeds).
+    /// Released automatically when the session is finalized or discarded.
+    pub _display_assertion: Option<power::DisplaySleepAssertion>,
 }
 
 #[derive(Default)]
@@ -100,6 +109,7 @@ pub fn begin_session(
 
     let system_wav = dir.join("system.wav");
     let mic_wav = dir.join("mic.wav");
+    let sck_mic_wav = dir.join("sck_mic.wav");
 
     let paused = Arc::new(AtomicBool::new(false));
 
@@ -113,8 +123,53 @@ pub fn begin_session(
         );
     }));
 
+    // SCStream-native mic tap runs in the same stream as system audio when the
+    // mic is requested — parallel to the cpal capture below, so a single
+    // recording reveals which path survives a VoIP call.
+    let sck_mic_arg = if include_mic { Some(sck_mic_wav.as_path()) } else { None };
+
+    // Keep the display awake for the whole session. Best-effort: a recording
+    // without the assertion is still better than no recording, it just becomes
+    // vulnerable to display sleep killing the SCStream mid-call.
+    let display_assertion = match power::DisplaySleepAssertion::create("Meister is recording a call")
+    {
+        Ok(a) => Some(a),
+        Err(e) => {
+            eprintln!(
+                "[capture] display-sleep assertion failed ({e}); \
+                 recording continues but will stop if the display sleeps"
+            );
+            None
+        }
+    };
+
+    // Surface an unexpected SCStream death (display sleep, lock, replayd
+    // restart) to the UI so the user finds out during the call, not after.
+    // The in-app event drives the recording-card warning; the system
+    // notification reaches the user when meister isn't the frontmost app —
+    // which is the normal case during a call.
+    let app_for_stop = app.clone();
+    let id_for_stop = id.clone();
+    let on_stream_stopped: Box<dyn Fn(Option<String>) + Send + Sync> = Box::new(move |error| {
+        use tauri::Emitter;
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app_for_stop.emit(
+            "call-capture-stream-stopped",
+            serde_json::json!({ "sessionId": id_for_stop, "error": error }),
+        );
+        if let Err(e) = app_for_stop
+            .notification()
+            .builder()
+            .title("Recording interrupted")
+            .body("System audio capture stopped — audio from this point on is not being recorded. Stop and save now.")
+            .show()
+        {
+            eprintln!("[capture] stream-stopped notification failed: {e}");
+        }
+    });
+
     // System audio first — if permission isn't granted, we bail.
-    let system_handle = match system_audio::start_system_capture(&system_wav, paused.clone(), amplitude.clone()) {
+    let system_handle = match system_audio::start_system_capture(&system_wav, sck_mic_arg, paused.clone(), amplitude.clone(), on_stream_stopped) {
         Ok(h) => h,
         Err(e) if e == "not-authorized" => {
             let _ = std::fs::remove_dir_all(&dir);
@@ -146,12 +201,14 @@ pub fn begin_session(
         session_dir: dir,
         system_wav,
         mic_wav: mic_path,
+        sck_mic_wav: if include_mic { Some(sck_mic_wav) } else { None },
         paused,
         system_handle,
         mic_handle,
         sample_rate: system_audio::SAMPLE_RATE,
         channels: system_audio::CHANNELS,
         _amplitude: amplitude,
+        _display_assertion: display_assertion,
     };
 
     registry.sessions.lock().unwrap().insert(id.clone(), session);
@@ -201,6 +258,20 @@ pub fn finalize_session(
     drop(session.system_handle);
     if let Some(h) = session.mic_handle { drop(h); }
 
+    // Diagnostic: report what each source track actually contains before mixing.
+    // Distinguishes "mic captured silence" (capture/permission/device problem)
+    // from "mic has signal but the mix buries it" (amix problem). Always on —
+    // these two lines per finalize are cheap and invaluable when a track is missing.
+    diag_wav("system", &session.system_wav);
+    if let Some(m) = session.mic_wav.as_deref() {
+        diag_wav("mic (cpal)", m);
+    } else {
+        eprintln!("[capture/finalize] mic: not requested (system-audio-only recording)");
+    }
+    if let Some(m) = session.sck_mic_wav.as_deref() {
+        diag_wav("mic (sck)", m);
+    }
+
     // Build output path using the same naming convention as mic-capture.
     std::fs::create_dir_all(captures_dir).map_err(|e| format!("create captures dir: {e}"))?;
     let ts_secs = std::time::SystemTime::now()
@@ -213,9 +284,58 @@ pub fn finalize_session(
 
     mix::encode_final(&session.system_wav, session.mic_wav.as_deref(), &out_path)?;
 
-    let _ = std::fs::remove_dir_all(&session.session_dir);
+    // Set MEISTER_KEEP_CAPTURE_TEMP=1 to preserve the per-source system.wav /
+    // mic.wav for manual inspection instead of deleting the session temp dir.
+    if std::env::var("MEISTER_KEEP_CAPTURE_TEMP").as_deref() == Ok("1") {
+        eprintln!(
+            "[capture/finalize] MEISTER_KEEP_CAPTURE_TEMP=1 — preserving source WAVs at {}",
+            session.session_dir.display()
+        );
+    } else {
+        let _ = std::fs::remove_dir_all(&session.session_dir);
+    }
 
     Ok(out_path.to_string_lossy().to_string())
+}
+
+/// Read a finalized capture WAV and log its declared format plus measured
+/// duration, peak, and RMS (in dBFS). Used at finalize to spot a silent or
+/// missing source track. Best-effort: any read error is logged, never fatal.
+fn diag_wav(label: &str, path: &std::path::Path) {
+    let mut reader = match hound::WavReader::open(path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[capture/finalize] {label}: cannot open {} ({e})", path.display());
+            return;
+        }
+    };
+    let spec = reader.spec();
+    let mut peak: i32 = 0;
+    let mut sum_sq: f64 = 0.0;
+    let mut count: u64 = 0;
+    for s in reader.samples::<i32>().flatten() {
+        let a = s.unsigned_abs() as i32;
+        if a > peak {
+            peak = a;
+        }
+        sum_sq += (s as f64) * (s as f64);
+        count += 1;
+    }
+    let full = f64::from(i16::MAX);
+    let frames = if spec.channels > 0 { count / u64::from(spec.channels) } else { 0 };
+    let secs = if spec.sample_rate > 0 { frames as f64 / f64::from(spec.sample_rate) } else { 0.0 };
+    let rms = if count > 0 { (sum_sq / count as f64).sqrt() } else { 0.0 };
+    let db = |v: f64| if v <= 0.0 { f64::NEG_INFINITY } else { 20.0 * (v / full).log10() };
+    eprintln!(
+        "[capture/finalize] {label}: {} Hz × {} ch, {:.1}s, {} samples | peak {:.1} dBFS, rms {:.1} dBFS{}",
+        spec.sample_rate,
+        spec.channels,
+        secs,
+        count,
+        db(f64::from(peak)),
+        db(rms),
+        if peak == 0 { "  <-- SILENT" } else { "" },
+    );
 }
 
 pub use cleanup::cleanup_orphaned_call_temps;

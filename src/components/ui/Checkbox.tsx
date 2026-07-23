@@ -27,7 +27,7 @@ export const Checkbox = forwardRef<
     <RxCheckbox.Root
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center rounded border bg-fill-tertiary border-separator transition-colors disabled:opacity-50 disabled:cursor-not-allowed data-[state=checked]:bg-accent data-[state=checked]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:border-accent",
+        "inline-flex items-center justify-center rounded-field border bg-fill-tertiary border-separator transition-colors disabled:opacity-50 disabled:cursor-not-allowed data-[state=checked]:bg-accent data-[state=checked]:border-accent data-[state=indeterminate]:bg-accent data-[state=indeterminate]:border-accent",
         boxSize[size],
         focusClasses,
         className,

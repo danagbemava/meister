@@ -125,7 +125,7 @@ export default function App() {
   }, [projects, recordingsByProject, refreshRecordings]);
 
   return (
-    <div className="h-screen flex gap-2 p-2 overflow-hidden">
+    <div className="h-screen flex overflow-hidden">
       <div
         aria-hidden={!sidebarVisible}
         className={`transition-all duration-200 overflow-hidden shrink-0 ${
@@ -148,7 +148,7 @@ export default function App() {
           }}
         />
       </div>
-      <div className="flex-1 rounded-xl bg-control-background overflow-hidden">
+      <div className="flex-1 bg-window-background overflow-hidden">
         {selection.kind === "none" && (
           <EmptyState loading={loadingProjects} hasProjects={projects.length > 0} />
         )}

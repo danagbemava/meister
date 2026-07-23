@@ -7,11 +7,15 @@ import { Button, Checkbox, Textarea } from "./ui";
 interface Props {
   template: Template;
   onChange: (t: Template) => void;
+  /** When the editor is mounted inside the collapsible template card, the card
+   *  header already shows the "Format template" label, so the editor's own
+   *  header row is redundant and is hidden. */
+  hideHeader?: boolean;
 }
 
 const TEMPLATE_EXTS = new Set(["md", "txt", "docx"]);
 
-export default function TemplateEditor({ template, onChange }: Props) {
+export default function TemplateEditor({ template, onChange, hideHeader }: Props) {
   const [dragging, setDragging] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,9 +47,13 @@ export default function TemplateEditor({ template, onChange }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
-          Format Template
-        </label>
+        {hideHeader ? (
+          <span />
+        ) : (
+          <label className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
+            Format Template
+          </label>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -62,7 +70,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
         onDrop={handleDrop}
       >
         {dragging && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-accent/10 border-2 border-accent z-10 pointer-events-none">
+          <div className="absolute inset-0 flex items-center justify-center rounded-control bg-accent/10 border-2 border-accent z-10 pointer-events-none">
             <p className="text-accent font-medium">Drop template file here</p>
           </div>
         )}
@@ -83,7 +91,7 @@ export default function TemplateEditor({ template, onChange }: Props) {
         />
       </div>
       <div className="mt-1">
-        <label className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-footnote text-label-secondary select-none">
           <Checkbox
             size="sm"
             checked={template.matchStyle ?? false}

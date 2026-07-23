@@ -53,6 +53,7 @@ export interface Recording {
 export const STAGES: StageKind[] = ["extract", "transcribe", "format"];
 
 export function overallStatus(r: Recording): "new" | "in_progress" | "completed" | "failed" {
+  if (r.stages.length === 0) return "new";
   if (r.stages.some((s) => s.status === "failed")) return "failed";
   if (r.stages.some((s) => s.status === "running")) return "in_progress";
   if (r.stages.every((s) => s.status === "completed")) return "completed";

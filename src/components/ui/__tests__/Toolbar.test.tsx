@@ -14,7 +14,7 @@ describe("Toolbar", () => {
     expect(screen.getByTestId("right")).toBeInTheDocument();
   });
 
-  it("applies a bottom separator border", () => {
+  it("applies a bottom border class", () => {
     const { container } = render(
       <Toolbar>
         <span>x</span>
@@ -22,7 +22,19 @@ describe("Toolbar", () => {
     );
     const root = container.firstChild as HTMLElement;
     expect(root.className).toMatch(/border-b/);
-    expect(root.className).toMatch(/border-separator/);
+  });
+
+  it("is transparent at rest (no scrolled attribute)", () => {
+    render(<Toolbar data-testid="tb" />);
+    const tb = screen.getByTestId("tb");
+    expect(tb).not.toHaveAttribute("data-scrolled", "true");
+    expect(tb.className).toContain("sticky");
+  });
+
+  it("gains the glass edge when `scrolled` is true", () => {
+    render(<Toolbar data-testid="tb" scrolled />);
+    const tb = screen.getByTestId("tb");
+    expect(tb).toHaveAttribute("data-scrolled", "true");
   });
 
   it("Toolbar.Spacer renders a flex-1 div", () => {

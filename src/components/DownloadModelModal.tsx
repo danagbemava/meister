@@ -71,7 +71,7 @@ export default function DownloadModelModal({ size, totalBytesEstimate, onComplet
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40">
-      <div className="bg-control-background border border-separator rounded-xl shadow-2xl w-[420px] p-6 flex flex-col gap-4">
+      <div className="bg-control-background border border-separator shadow-card rounded-card w-[420px] p-6 flex flex-col gap-4">
         {state === "confirm" && (
           <>
             <h2 className="text-title-2 font-semibold">Download {size} model?</h2>

@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { GlobalSettings, OutputFormat } from "../types/storage";
 import DownloadModelModal from "./DownloadModelModal";
 import { Input, Select } from "./ui";
+import { THEMES, applyTheme, getStoredTheme, type ThemeKey } from "../lib/theme";
+import { cn } from "../lib/cn";
 
 interface Props {
   settings: GlobalSettings;
@@ -34,6 +36,7 @@ function modelLabel(m: ModelInfo) {
 }
 
 export default function SettingsForm({ settings, onChange }: Props) {
+  const [theme, setTheme] = useState<ThemeKey>(() => getStoredTheme());
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [modelInfos, setModelInfos] = useState<ModelInfo[]>([]);
   const [pendingDownload, setPendingDownload] = useState<ModelInfo | null>(null);
@@ -64,6 +67,31 @@ export default function SettingsForm({ settings, onChange }: Props) {
 
   return (
     <div className="flex flex-col gap-5">
+      <Section title="Appearance">
+        <div className="flex gap-2 flex-wrap">
+          {THEMES.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => { applyTheme(t.key); setTheme(t.key); }}
+              aria-pressed={theme === t.key}
+              className={cn(
+                "flex items-center gap-2 rounded-full border px-3 py-1.5 text-callout",
+                theme === t.key
+                  ? "border-accent text-label-primary bg-fill-tertiary"
+                  : "border-separator text-label-secondary hover:bg-fill-quaternary",
+              )}
+            >
+              <span
+                className="inline-block h-4 w-4 rounded-full border border-separator"
+                style={{ background: `linear-gradient(135deg, ${t.swatch.bg} 50%, ${t.swatch.accent} 50%)` }}
+              />
+              {t.name}
+            </button>
+          ))}
+        </div>
+      </Section>
+
       <Section title="Ollama">
         <Field label="Server URL">
           <Input
@@ -108,7 +136,7 @@ export default function SettingsForm({ settings, onChange }: Props) {
           <div className="flex flex-col gap-1">
             {EXPORT_FORMATS.map(({ id, label, desc }) => (
               <label key={id}
-                className="flex items-center gap-2 text-body text-label-primary cursor-pointer">
+                className="flex items-center gap-2 text-body text-label-primary">
                 <input
                   type="radio"
                   name="defaultExportFormat"
@@ -143,7 +171,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-footnote font-semibold text-label-secondary uppercase tracking-wider">{title}</h2>
-      {children}
+      <div className="bg-fill-quaternary border border-separator rounded-card flex flex-col gap-3 p-4">
+        {children}
+      </div>
     </div>
   );
 }

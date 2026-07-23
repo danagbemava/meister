@@ -15,6 +15,7 @@ import {
 } from "../types/storage";
 import { exportRecording } from "../lib/exportRecording";
 import { useGlobalSettings } from "../lib/useGlobalSettings";
+import { useScrollEdge } from "../lib/useScrollEdge";
 
 export interface RecordingViewHandle {
   runPipeline: () => void;
@@ -135,6 +136,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   const runRef = useRef<() => void>(() => {});
   const exportFlowRef = useRef<() => void>(() => {});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrolled = useScrollEdge(scrollRef);
 
   useImperativeHandle(ref, () => ({
     runPipeline: () => { runRef.current(); },
@@ -300,12 +303,12 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   return (
     <div className="h-full flex flex-col">
-      <Toolbar data-tauri-drag-region>
+      <Toolbar data-tauri-drag-region scrolled={scrolled}>
         {renamingRec ? (
           <Input
             autoFocus
             size="sm"
-            className="font-semibold flex-1 mr-2"
+            className="font-display text-[22px] font-semibold flex-1 mr-2"
             value={draftRecName}
             onChange={(e) => setDraftRecName(e.target.value)}
             onBlur={async () => {
@@ -326,7 +329,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
         ) : (
           <h1
             onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
-            className="text-body font-semibold cursor-text hover:text-accent truncate"
+            className="font-display text-[22px] font-semibold cursor-text hover:text-accent truncate"
             title="Click to rename"
           >
             {rec.name}
@@ -339,8 +342,8 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
         </Button>
       </Toolbar>
       <div className="flex-1 min-h-0 flex">
-      <div className="flex-1 min-w-0 min-h-0 p-8 flex flex-col gap-6">
-        <div className="shrink-0 flex flex-col gap-1">
+      <div ref={scrollRef} className="flex-1 min-w-0 min-h-0 overflow-y-auto scrollable p-8 flex flex-col gap-6">
+        <div className="shrink-0 flex flex-col gap-1 bg-control-background border border-separator rounded-card shadow-card p-3">
           <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
             {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
           </span>
@@ -353,7 +356,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
                   className={`flex flex-col gap-1.5 px-3 py-1.5 rounded text-footnote font-mono
                     ${missing
                       ? "bg-status-error/10 border border-status-error/20"
-                      : "bg-control-background"}`}
+                      : "bg-fill-tertiary"}`}
                 >
                   <div className="flex items-center gap-3">
                     {!missing ? (

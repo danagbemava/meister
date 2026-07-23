@@ -40,4 +40,14 @@ describe("Select", () => {
     );
     expect(screen.getByRole("combobox").className).toMatch(/bg-\[url/);
   });
+
+  it("applies rounded-control radius class", () => {
+    render(
+      <Select>
+        <option value="x">X</option>
+      </Select>,
+    );
+    const select = screen.getByRole("combobox");
+    expect(select.className).toContain("rounded-control");
+  });
 });

@@ -64,4 +64,16 @@ describe("ContextMenu", () => {
     const del = await screen.findByText("Delete");
     expect(del.className).toMatch(/text-status-error/);
   });
+
+  it("content uses the opaque card surface", async () => {
+    render(<Harness />);
+    await userEvent.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByTestId("trigger"),
+    });
+    const content = await screen.findByRole("menu");
+    expect(content.className).toContain("bg-control-background");
+    expect(content.className).toContain("border-separator");
+    expect(content.className).toContain("rounded-card");
+  });
 });

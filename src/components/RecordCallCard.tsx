@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../api/storage";
 import { Button, Checkbox, Icon } from "./ui";
 import RecordingWaveform from "./RecordingWaveform";
@@ -15,6 +16,9 @@ type CaptureState =
 interface Props {
   onPicked: (filePaths: string[]) => void;
   onActiveChange?: (discard: (() => void) | null) => void;
+  /** When provided, the idle card shows a cancel control and a completed
+   *  discard returns the user to the pills via this callback. */
+  onCancel?: () => void;
 }
 
 function formatElapsed(ms: number): string {
@@ -26,10 +30,11 @@ function formatElapsed(ms: number): string {
   return hh > 0 ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : `${pad(mm)}:${pad(ss)}`;
 }
 
-export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
+export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: Props) {
   const [state, setState] = useState<CaptureState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [micError, setMicError] = useState<string>("");
+  const [streamWarning, setStreamWarning] = useState<string>("");
   const [includeMic, setIncludeMic] = useState(true);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -59,6 +64,41 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     return () => { stopTicker(); };
   }, []);
 
+  // The backend emits this when the ScreenCaptureKit stream dies mid-session
+  // (display sleep, screen lock, replayd restart). Recording keeps running but
+  // system audio is gone from that point — tell the user right away.
+  useEffect(() => {
+    if (!sessionId) {
+      setStreamWarning("");
+      return;
+    }
+    let cancelled = false;
+    let unlisten: UnlistenFn | undefined;
+    listen<{ sessionId: string; error: string | null }>(
+      "call-capture-stream-stopped",
+      (event) => {
+        if (cancelled || event.payload.sessionId !== sessionId) return;
+        setStreamWarning(
+          "System audio capture stopped unexpectedly — audio from this point on is not being recorded. Stop and save now.",
+        );
+      },
+    )
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch((e) => {
+        console.warn("RecordCallCard: stream-stopped listen failed", e);
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [sessionId]);
+
   const discard = async () => {
     const id = sessionRef.current;
     stopTicker();
@@ -71,11 +111,13 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     setState("idle");
     setElapsedMs(0);
     accumulatedRef.current = 0;
+    onCancel?.();
   };
 
   const start = async () => {
     setErrorMsg("");
     setMicError("");
+    setStreamWarning("");
     setElapsedMs(0);
     accumulatedRef.current = 0;
     try {
@@ -160,21 +202,32 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
     setState("idle");
     setErrorMsg("");
     setMicError("");
+    setStreamWarning("");
   };
 
   const cardBase =
-    "rounded-xl border-2 flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
+    "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
 
   if (state === "idle") {
     return (
       <div
-        className={`${cardBase} border-dashed border-separator hover:border-separator bg-control-background cursor-pointer`}
+        className={`${cardBase} relative border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
         onClick={start}
       >
+        {onCancel && (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft="x"
+            aria-label="Cancel"
+            className="absolute top-2 right-2 text-label-tertiary hover:bg-fill-tertiary"
+            onClick={(e) => { e.stopPropagation(); onCancel(); }}
+          />
+        )}
         <Icon name="waveform" size="lg" className="text-label-tertiary" />
         <p className="text-body text-label-secondary">Record call</p>
         <label
-          className="flex items-center gap-2 text-footnote text-label-secondary cursor-pointer select-none"
+          className="flex items-center gap-2 text-footnote text-label-secondary select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <Checkbox
@@ -212,7 +265,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
   if (state === "recording" || state === "paused") {
     return (
-      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-control-background`}>
+      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-fill-quaternary`}>
         <div className="w-full flex items-center gap-2">
           <span
             className={`w-2 h-2 rounded-full ${
@@ -237,6 +290,10 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
         {micError && (
           <p className="text-footnote text-status-warning">{micError}</p>
+        )}
+
+        {streamWarning && (
+          <p className="text-footnote text-status-error">{streamWarning}</p>
         )}
 
         <div className="w-full flex items-center gap-2">
@@ -264,7 +321,7 @@ export default function RecordCallCard({ onPicked, onActiveChange }: Props) {
 
   if (state === "saving") {
     return (
-      <div className={`${cardBase} border-solid border-separator bg-control-background`}>
+      <div className={`${cardBase} border-solid border-separator bg-fill-quaternary`}>
         <span className="spinner" />
         <p className="text-body text-label-secondary">Mixing tracks…</p>
       </div>

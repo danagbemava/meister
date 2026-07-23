@@ -55,4 +55,10 @@ describe("Checkbox", () => {
     );
     expect(captured).toBeInstanceOf(HTMLButtonElement);
   });
+
+  it("applies rounded-field radius class", () => {
+    render(<Checkbox aria-label="Agree" />);
+    const checkbox = screen.getByRole("checkbox", { name: "Agree" });
+    expect(checkbox.className).toContain("rounded-field");
+  });
 });

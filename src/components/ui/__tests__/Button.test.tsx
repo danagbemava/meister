@@ -77,4 +77,19 @@ describe("Button", () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("uses the pill radius and pressed scale", () => {
+    render(<Button>Go</Button>);
+    const btn = screen.getByRole("button", { name: "Go" });
+    expect(btn.className).toContain("rounded-full");
+    expect(btn.className).toContain("active:scale-[0.97]");
+    expect(btn.className).not.toContain("cursor-pointer");
+  });
+
+  it("secondary variant is outlined with a border", () => {
+    render(<Button variant="secondary">Go</Button>);
+    const btn = screen.getByRole("button", { name: "Go" });
+    expect(btn.className).toContain("border-[1.5px]");
+    expect(btn.className).toContain("bg-transparent");
+  });
 });

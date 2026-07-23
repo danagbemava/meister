@@ -15,7 +15,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
       ref={ref}
       type={type}
       className={cn(
-        "w-full bg-fill-tertiary border border-separator text-label-primary placeholder:text-text-placeholder rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed aria-invalid:border-status-error aria-invalid:focus-visible:ring-status-error/40 focus-visible:border-accent",
+        "w-full bg-fill-tertiary border border-separator text-label-primary placeholder:text-text-placeholder rounded-control transition-colors disabled:opacity-50 disabled:cursor-not-allowed aria-invalid:border-status-error aria-invalid:focus-visible:ring-status-error/40 focus-visible:border-accent",
         sizeClasses(size),
         focusClasses,
         className,

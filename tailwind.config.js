@@ -9,6 +9,7 @@ export default {
       fontFamily: {
         sans: ["-apple-system", "BlinkMacSystemFont", "SF Pro Display", "Segoe UI", "sans-serif"],
         mono: ["SF Mono", "JetBrains Mono", "Fira Code", "monospace"],
+        display: ["Georgia", "Iowan Old Style", "Times New Roman", "serif"],
       },
       fontSize: {
         // macOS HIG type scale. Each entry: [size, { lineHeight, fontWeight }]
@@ -57,6 +58,17 @@ export default {
 
         // Focus ring — accent at 50% alpha, reused in component focus states.
         "focus-ring":             "rgb(var(--color-accent-rgb) / 0.5)",
+      },
+      borderRadius: {
+        window:  "12px",
+        card:    "10px",
+        control: "7px",
+        field:   "5px",
+      },
+      boxShadow: {
+        overlay: "var(--shadow-overlay)",
+        island:  "var(--shadow-island)",
+        card:    "var(--shadow-card)",
       },
     },
   },

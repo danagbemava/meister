@@ -86,35 +86,10 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     },
   }));
 
-  // Frame reporting → Rust for the native glass view.
+  // Retire native glass: disable the sidebar glass view once on mount.
   const sidebarRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const el = sidebarRef.current;
-    if (!el) return;
-    const report = () => {
-      const r = el.getBoundingClientRect();
-      try {
-        const maybe = invoke("report_sidebar_frame", {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-        }) as Promise<unknown> | undefined;
-        if (maybe && typeof (maybe as Promise<unknown>).catch === "function") {
-          (maybe as Promise<unknown>).catch(() => { /* command unavailable on non-macOS or before setup */ });
-        }
-      } catch {
-        /* command unavailable on non-macOS or before setup */
-      }
-    };
-    report();
-    const ro = new ResizeObserver(report);
-    ro.observe(el);
-    window.addEventListener("resize", report);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", report);
-    };
+    void Promise.resolve(invoke("set_sidebar_glass_enabled_cmd", { enabled: false })).catch(() => {});
   }, []);
 
   // Search filtering.
@@ -212,13 +187,13 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   return (
     <aside
       ref={sidebarRef}
-      className="w-60 h-full shrink-0 rounded-xl flex flex-col bg-transparent"
+      className="w-60 h-full shrink-0 flex flex-col bg-sidebar-background border-r border-separator overflow-hidden"
     >
       <div data-tauri-drag-region className="h-9 shrink-0" />
 
       <div className="px-3 pb-2 shrink-0">
         <div
-          className="flex items-center gap-2 h-8 px-2.5 rounded-lg"
+          className="flex items-center gap-2 h-8 px-2.5 rounded-control"
           style={{
             background: "var(--sidebar-search-bg)",
             border: "1px solid var(--sidebar-search-border)",
@@ -329,7 +304,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                     aria-label={`${p.name}, project, ${recs.length} recording${recs.length === 1 ? "" : "s"}`}
                     aria-current={isSel ? "page" : undefined}
                     aria-expanded={expanded}
-                    className="group mx-2 my-px h-9 px-2.5 rounded-md flex items-center gap-2 text-body cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    className="group mx-2 my-px h-9 px-2.5 rounded-control flex items-center gap-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                     style={
                       isSel
                         ? { background: "var(--sidebar-row-selected)", color: "var(--sidebar-row-selected-text)" }
@@ -400,7 +375,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                         }}
                         aria-label={`${rec.name}, recording`}
                         aria-current={recSel ? "page" : undefined}
-                        className="mx-2 my-px h-[34px] pl-[30px] pr-2.5 rounded-md flex items-center gap-2 text-body cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                        className="mx-2 my-px h-[34px] pl-[30px] pr-2.5 rounded-control flex items-center gap-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                         style={
                           recSel
                             ? { background: "var(--sidebar-row-selected)", color: "var(--sidebar-row-selected-text)" }
