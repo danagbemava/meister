@@ -6,6 +6,7 @@ const RING_CAPACITY = 128;
 
 interface AmplitudePayload {
   sessionId: string;
+  source: "system" | "mic";
   rms: number;
 }
 
@@ -14,7 +15,10 @@ interface AmplitudePayload {
  * `call-capture-amplitude` Tauri events filtered to the given `sessionId`.
  * When `sessionId === null`, returns a stable empty buffer.
  */
-export function useTauriAmplitude(sessionId: string | null): { samples: Float32Array } {
+export function useTauriAmplitude(
+  sessionId: string | null,
+  source: AmplitudePayload["source"] = "system",
+): { samples: Float32Array } {
   const [samples, setSamples] = useState<Float32Array>(() => new Float32Array(RING_CAPACITY));
   const ringRef = useRef<RingBuffer | null>(null);
 
@@ -30,7 +34,7 @@ export function useTauriAmplitude(sessionId: string | null): { samples: Float32A
 
     listen<AmplitudePayload>("call-capture-amplitude", (event) => {
       if (cancelled) return;
-      if (event.payload.sessionId !== sessionId) return;
+      if (event.payload.sessionId !== sessionId || event.payload.source !== source) return;
       ringRef.current?.push(event.payload.rms);
       if (ringRef.current) setSamples(ringRef.current.snapshot());
     })
@@ -49,7 +53,7 @@ export function useTauriAmplitude(sessionId: string | null): { samples: Float32A
       cancelled = true;
       unlisten?.();
     };
-  }, [sessionId]);
+  }, [sessionId, source]);
 
   return { samples };
 }

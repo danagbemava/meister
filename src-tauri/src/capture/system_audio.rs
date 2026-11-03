@@ -148,7 +148,7 @@ struct AudioOutput {
     paused: Arc<AtomicBool>,
     timeline: Arc<Mutex<Timeline>>,
     track: Arc<Mutex<Track>>,
-    amplitude: Option<Arc<super::amplitude::AmplitudeEmitter>>,
+    amplitude: Arc<super::amplitude::AmplitudeEmitter>,
     label: &'static str,
 }
 
@@ -169,9 +169,7 @@ impl SCStreamOutputTrait for AudioOutput {
         let Some(interleaved) = decode(&bufs, fd.audio_is_float(), bits) else { return };
         let frames = to_48k_stereo(&interleaved, channels as usize, rate as u32);
 
-        if let Some(amp) = &self.amplitude {
-            amp.push(super::amplitude::compute_rms(&frames));
-        }
+        self.amplitude.push(super::amplitude::compute_rms(&frames));
         let Ok(mut track) = self.track.lock() else { return };
         let format = (rate as u32, channels);
         if track.format != Some(format) {
@@ -239,7 +237,8 @@ pub fn start_system_capture(
     wav_path: &Path,
     mic_wav_path: Option<&Path>,
     paused: Arc<AtomicBool>,
-    amplitude: Arc<super::amplitude::AmplitudeEmitter>,
+    system_meter: Arc<super::amplitude::AmplitudeEmitter>,
+    mic_meter: Arc<super::amplitude::AmplitudeEmitter>,
 ) -> Result<Box<dyn std::any::Any + Send>, String> {
     // Enumerate shareable content. TCC denial surfaces here as a
     // NoShareableContent error from the Swift side.
@@ -277,8 +276,8 @@ pub fn start_system_capture(
     let mut stream = SCStream::new(&filter, &config);
     let mut tracks = Vec::new();
     let taps = [
-        (Some(wav_path), SCStreamOutputType::Audio, Some(amplitude), "system"),
-        (mic_wav_path, SCStreamOutputType::Microphone, None, "sck-mic"),
+        (Some(wav_path), SCStreamOutputType::Audio, system_meter, "system"),
+        (mic_wav_path, SCStreamOutputType::Microphone, mic_meter, "sck-mic"),
     ];
     for (path, kind, amplitude, label) in taps {
         let Some(path) = path else { continue };

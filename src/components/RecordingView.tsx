@@ -5,10 +5,11 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
 import OutputPreview from "./OutputPreview";
 import AskPanel from "./AskPanel";
-import { Button, Icon, Input, Toolbar } from "./ui";
+import { Button, Icon, Toolbar } from "./ui";
+import EditableTitle from "./EditableTitle";
+import { basename, recordingTitle } from "../lib/recordingTitle";
 import { api } from "../api/storage";
 import {
-  overallStatus,
   type Recording,
   type StageRecord,
   type StageKind,
@@ -46,8 +47,6 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   };
   const [formatProgress, setFormatProgress] = useState<FormatProgressPayload | null>(null);
   const [missingByPath, setMissingByPath] = useState<Record<string, boolean>>({});
-  const [renamingRec, setRenamingRec] = useState(false);
-  const [draftRecName, setDraftRecName] = useState("");
   const [askOpen, setAskOpen] = useState(false);
   const [highlightRange, setHighlightRange] = useState<
     { start: number; end: number; nonce: number } | undefined
@@ -221,13 +220,14 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   const allCompleted = rec.stages.every((s) => s.status === "completed");
   const backendRunning = rec.stages.some((s) => s.status === "running");
   const canRun = !running && !backendRunning && !allCompleted; // re-run happens via Start over + Run
+  const modelOf = (k: StageKind) => stageOf(k)?.modelUsed?.split("@")[0];
 
   const exportFlow = async () => {
     if (!rec || !globalSettings) return;
     if (!formatted) return;
     await exportRecording({
       formatted,
-      recordingName: rec.name,
+      recordingName: recordingTitle(rec.name),
       defaultFormat: globalSettings.defaultExportFormat,
     });
   };
@@ -288,7 +288,7 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
 
   const deleteMe = async () => {
     const ok = await dialogConfirm(
-      `Delete recording '${rec.name}'?`,
+      `Delete recording '${recordingTitle(rec.name)}'?`,
       { title: "Delete recording", kind: "warning" },
     );
     if (!ok) return;
@@ -299,81 +299,66 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   return (
     <div className="h-full flex flex-col">
       <Toolbar data-tauri-drag-region scrolled={scrolled}>
-        {renamingRec ? (
-          <Input
-            autoFocus
-            size="sm"
-            className="font-display text-[22px] font-semibold flex-1 mr-2"
-            value={draftRecName}
-            onChange={(e) => setDraftRecName(e.target.value)}
-            onBlur={async () => {
-              const name = draftRecName.trim() || rec.name;
-              setRenamingRec(false);
-              if (name !== rec.name) {
-                const next = { ...rec, name };
-                setRec(next);
-                await api.updateRecording(next);
-                onRecordingChanged();
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") { setDraftRecName(rec.name); setRenamingRec(false); }
-            }}
-          />
-        ) : (
-          <h1
-            onClick={() => { setDraftRecName(rec.name); setRenamingRec(true); }}
-            className="font-display text-[22px] font-semibold cursor-text hover:text-accent truncate"
-            title="Click to rename"
-          >
-            {rec.name}
-          </h1>
-        )}
+        <EditableTitle
+          value={recordingTitle(rec.name)}
+          onRename={async (name) => {
+            const next = { ...rec, name };
+            setRec(next);
+            await api.updateRecording(next);
+            onRecordingChanged();
+          }}
+          className="font-display text-[22px] font-semibold"
+        />
         <Toolbar.Spacer />
-        <span className="text-footnote text-label-tertiary">{overallStatus(rec)}</span>
-        <Button variant="ghost" size="sm" onClick={deleteMe} className="text-status-error">
-          Delete
-        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconLeft="trash"
+          aria-label="Delete recording"
+          title="Delete recording"
+          onClick={deleteMe}
+          className="text-label-secondary hover:text-status-error hover:bg-status-error/10"
+        />
       </Toolbar>
       <div className="flex-1 min-h-0 flex">
       <div ref={scrollRef} className="flex-1 min-w-0 min-h-0 overflow-y-auto scrollable p-8 flex flex-col gap-6">
-        <div className="shrink-0 flex flex-col gap-1 bg-control-background border border-separator rounded-card shadow-card p-3">
-          <span className="text-footnote font-medium text-label-secondary uppercase tracking-wider">
-            {rec.sourcePaths.length > 1 ? "Sources" : "Source"}
-          </span>
-          <ul className="flex flex-col gap-1 max-h-[30vh] overflow-y-auto scrollable">
+        <div className="shrink-0">
+          <ul className="flex flex-col gap-1 max-h-[30vh] overflow-y-auto scrollable" aria-label="Audio sources">
             {rec.sourcePaths.map((p, idx) => {
               const missing = !!missingByPath[p];
               return (
                 <li
                   key={`${p}-${idx}`}
-                  className={`flex flex-col gap-1.5 px-3 py-1.5 rounded text-footnote font-mono
+                  className={`flex flex-col gap-1.5 px-3 py-2 rounded-control text-callout
                     ${missing
                       ? "bg-status-error/10 border border-status-error/20"
-                      : "bg-fill-tertiary"}`}
+                      : "bg-fill-quaternary border border-separator"}`}
                 >
                   <div className="flex items-center gap-3">
                     {!missing ? (
                       <button
                         type="button"
-                        aria-label={expandedSources.has(idx) ? "Collapse player" : "Expand player"}
                         aria-expanded={expandedSources.has(idx)}
                         onClick={() => toggleSourceExpanded(idx)}
-                        className="shrink-0 inline-flex items-center justify-center w-4 h-4 text-label-tertiary hover:text-label-primary transition-transform"
-                        style={{ transform: expandedSources.has(idx) ? "rotate(90deg)" : "rotate(0deg)" }}
+                        title={p}
+                        className="flex-1 min-w-0 flex items-center gap-2 text-left text-label-secondary hover:text-label-primary rounded-field focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                       >
-                        <Icon name="chevron-right" size="sm" />
+                        <Icon
+                          name="chevron-right"
+                          size="sm"
+                          className={`shrink-0 transition-transform ${expandedSources.has(idx) ? "rotate-90" : ""}`}
+                        />
+                        <span className="shrink-0 text-label-primary">
+                          {rec.sourcePaths.length > 1 ? `Source ${idx + 1}` : "Audio"}
+                        </span>
+                        <span className="truncate text-footnote text-label-tertiary">{basename(p)}</span>
+                        <span className="sr-only">{expandedSources.has(idx) ? "Hide player" : "Show player"}</span>
                       </button>
                     ) : (
-                      <span className="shrink-0 w-4" aria-hidden />
+                      <span className="flex-1 truncate text-status-error" title={p}>
+                        Missing file: {basename(p)}
+                      </span>
                     )}
-                    <span className="text-label-tertiary tabular-nums w-5 shrink-0">
-                      {rec.sourcePaths.length > 1 ? `${idx + 1}.` : ""}
-                    </span>
-                    <span className={`flex-1 truncate ${missing ? "text-status-error" : "text-label-secondary"}`} title={p}>
-                      {p}
-                    </span>
                     {missing && (
                       <Button
                         variant="ghost"
@@ -416,42 +401,51 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           </ul>
         </div>
 
+        {allCompleted && !running ? (
+          <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-footnote text-label-secondary">
+            <Icon name="check" size="sm" className="text-status-success" />
+            <span>
+              Transcribed with Whisper {modelOf("transcribe")} · Notes written by {modelOf("format")}
+            </span>
+            <span className="ml-auto flex gap-1">
+              <Button variant="ghost" size="sm" onClick={() => void redoStage("transcribe")}>
+                Redo transcript
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => void redoStage("format")}>
+                Rewrite notes
+              </Button>
+            </span>
+          </div>
+        ) : (
         <div className="shrink-0 flex flex-col gap-2">
-          {STAGE_ORDER.map((k) => {
-            const s = stageOf(k)!;
-            const subtitle =
-              k === "transcribe" ? `model: ${globalSettings?.whisperModel ?? "?"}`
-              : k === "format" ? `model: ${globalSettings?.model ?? "?"}`
-              : undefined;
-            const progress =
-              s.status === "running" && k === "transcribe" ? transcribePct
-              : undefined;
-            const onRedo =
-              k === "transcribe" || k === "format"
-                ? () => void redoStage(k)
+            {STAGE_ORDER.map((k) => {
+              const s = stageOf(k)!;
+              const subtitle =
+                k === "transcribe" ? `Whisper ${modelOf("transcribe") ?? globalSettings?.whisperModel ?? ""}`
+                : k === "format" ? modelOf("format") ?? globalSettings?.model
                 : undefined;
-            return (
-              <StageCard
-                key={k}
-                kind={k}
-                status={s.status}
-                error={s.error}
-                subtitle={subtitle}
-                progress={progress}
-                onRedo={onRedo}
-                redoDisabled={running || backendRunning}
-              />
-            );
-          })}
-        </div>
-
-        <OutputPreview
-          transcript={transcript}
-          formatted={formatted}
-          highlightRange={highlightRange}
-          onFormattedChange={onFormattedChange}
-          formattedReadOnly={formatStatus !== "completed"}
-        />
+              const progress =
+                s.status === "running" && k === "transcribe" ? transcribePct
+                : undefined;
+              const onRedo =
+                k === "transcribe" || k === "format"
+                  ? () => void redoStage(k)
+                  : undefined;
+              return (
+                <StageCard
+                  key={k}
+                  kind={k}
+                  status={s.status}
+                  error={s.error}
+                  subtitle={subtitle}
+                  progress={progress}
+                  onRedo={onRedo}
+                  redoDisabled={running || backendRunning}
+                />
+              );
+            })}
+          </div>
+        )}
 
         {rec.stages.find((s) => s.stage === "format")?.status === "running" && formatProgress && (
           <div className="shrink-0 text-footnote text-label-tertiary space-y-1">
@@ -482,6 +476,15 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
             )}
           </div>
         )}
+
+        <OutputPreview
+          transcript={transcript}
+          formatted={formatted}
+          highlightRange={highlightRange}
+          onFormattedChange={onFormattedChange}
+          formattedReadOnly={formatStatus !== "completed"}
+        />
+
       </div>
         {askOpen && rec && (
           <div className="w-[420px] shrink-0 border-s border-separator flex flex-col">
@@ -507,15 +510,16 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           >
             Start over
           </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            disabled={!formatted}
-            title="Export the formatted output to a file (⌘E)"
-            onClick={() => void exportFlow()}
-          >
-            Export…
-          </Button>
+          {!allCompleted && formatted && (
+            <Button
+              variant="secondary"
+              size="md"
+              title="Export the notes to a file (⌘E)"
+              onClick={() => void exportFlow()}
+            >
+              Export…
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="md"
@@ -540,13 +544,12 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
           >
             Stop
           </Button>
+        ) : allCompleted ? (
+          <Button variant="primary" size="lg" title="Export the notes to a file (⌘E)" onClick={() => void exportFlow()}>
+            Export…
+          </Button>
         ) : (
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={!canRun}
-            onClick={run}
-          >
+          <Button variant="primary" size="lg" disabled={!canRun} onClick={run}>
             {anyFailed ? "Resume" : "Run"}
           </Button>
         )}

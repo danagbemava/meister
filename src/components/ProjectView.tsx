@@ -8,6 +8,9 @@ import { api } from "../api/storage";
 import { overallStatus } from "../types/storage";
 import type { Project, Recording } from "../types/storage";
 import { Button, Icon, Input, Textarea, Toolbar } from "./ui";
+import EditableTitle from "./EditableTitle";
+import { basename, captureStamp, recordingTitle } from "../lib/recordingTitle";
+import { uniqueName } from "../lib/uniqueName";
 import { useScrollEdge } from "../lib/useScrollEdge";
 import { cn } from "../lib/cn";
 import { subscribe } from "../lib/subscribe";
@@ -33,36 +36,32 @@ function isAudioVideo(name: string): boolean {
   return AUDIO_VIDEO_EXT_SET.has(ext);
 }
 
-function basename(p: string): string {
-  return p.split(/[\\/]/).pop() ?? p;
-}
-
 function deriveName(paths: string[]): string {
   const first = basename(paths[0] ?? "recording");
-  return first.replace(/\.[^.]+$/, "");
+  return recordingTitle(first.replace(/\.[^.]+$/, ""));
 }
 
 const STAGE_LABELS: Record<string, string> = {
   extract: "Extracting audio",
   transcribe: "Transcribing",
-  format: "Formatting",
+  format: "Writing notes",
 };
 
 /** Short status line for a recording row. */
 function recordingStatus(r: Recording): { text: string; tone: string } {
   const status = overallStatus(r);
   if (status === "completed") {
-    return { text: "✓ Transcribed · formatted", tone: "text-status-success" };
+    return { text: "Notes ready", tone: "text-status-success" };
   }
   if (status === "failed") {
-    return { text: "✗ failed", tone: "text-status-error" };
+    return { text: "Failed", tone: "text-status-error" };
   }
   if (status === "in_progress") {
     const running = r.stages.find((s) => s.status === "running");
     const label = running ? STAGE_LABELS[running.stage] ?? running.stage : "Processing";
-    return { text: `⟳ ${label}…`, tone: "text-accent" };
+    return { text: `${label}…`, tone: "text-accent" };
   }
-  return { text: "new", tone: "text-label-tertiary" };
+  return { text: "Not processed yet", tone: "text-label-tertiary" };
 }
 
 /** First non-empty line of the template, for the collapsed-card summary. */
@@ -84,8 +83,6 @@ export default function ProjectView({
 }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState("");
   const [staging, setStaging] = useState<string[]>([]);
   const [stagingName, setStagingName] = useState("");
   // null → auto (resolved from template content once loaded); true/false → user override.
@@ -103,7 +100,6 @@ export default function ProjectView({
     const list = await api.listProjects();
     const p = list.find((x) => x.id === projectId) ?? null;
     setProject(p);
-    if (p) setDraftName(p.name);
     await refreshRecordings();
   }, [projectId, refreshRecordings]);
 
@@ -171,11 +167,8 @@ export default function ProjectView({
 
   const saveCapture = async (paths: string[], label: string) => {
     setAffordance(null);
-    const stamp = new Date().toLocaleString(undefined, {
-      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
-    });
     try {
-      const rec = await api.createRecording(projectId, `${label} · ${stamp}`, paths);
+      const rec = await api.createRecording(projectId, `${label} · ${captureStamp(new Date())}`, paths);
       setRecordings((rs) => [...rs, rec]);
       onRecordingCreated(rec);
     } catch {
@@ -235,44 +228,121 @@ export default function ProjectView({
   return (
     <div className="h-full flex flex-col">
       <Toolbar data-tauri-drag-region scrolled={scrolled}>
-        {renaming ? (
-          <Input
-            autoFocus
-            size="sm"
-            className="font-semibold"
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={async () => {
-              const name = draftName.trim() || project.name;
-              setRenaming(false);
-              if (name !== project.name) await save({ ...project, name });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              if (e.key === "Escape") { setDraftName(project.name); setRenaming(false); }
-            }}
-          />
-        ) : (
-          <h1
-            onClick={() => setRenaming(true)}
-            className="text-body font-semibold cursor-text hover:text-accent truncate"
-            title="Click to rename"
-          >
-            {project.name}
-          </h1>
-        )}
         <Toolbar.Spacer />
       </Toolbar>
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollable p-8 flex flex-col gap-8">
-        {/* Editorial header */}
         <header className="flex flex-col gap-1">
-          <h2 className="text-[22px] font-display font-semibold leading-tight truncate">
-            {project.name}
-          </h2>
+          <EditableTitle
+            value={project.name}
+            onRename={async (name) => {
+              const others = (await api.listProjects()).filter((p) => p.id !== project.id);
+              await save({ ...project, name: uniqueName(name, others.map((p) => p.name)) });
+            }}
+            className="text-[22px] font-display font-semibold leading-tight"
+          />
           <p className="text-callout italic text-label-tertiary">
             {metaParts.join(" · ")}
           </p>
         </header>
+
+        {/* Recordings — drop target wraps the whole section */}
+        <section
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={cn(
+            "flex flex-col gap-3 rounded-card -m-1 p-1 transition-colors",
+            dragging && "border-2 border-dashed border-accent bg-accent/10",
+          )}
+        >
+          <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider">
+            Recordings
+          </h2>
+
+          {/* Actions sit at the top, and the capture card replaces them in place */}
+          {affordance === null && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" size="md" onClick={() => setAffordance("call")}>
+                <Icon name="waveform" size="sm" /> Record call
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => setAffordance("audio")}>
+                Record audio
+              </Button>
+              <Button variant="secondary" size="md" onClick={() => void importFiles()}>
+                Import files…
+              </Button>
+            </div>
+          )}
+
+          {/* Active capture surfaces stay at the top so they are always in view */}
+          {affordance === "call" && (
+            <RecordCallCard
+              onPicked={(paths) => saveCapture(paths, "Call")}
+              onActiveChange={onCaptureActiveChange}
+              onCancel={() => setAffordance(null)}
+            />
+          )}
+          {affordance === "audio" && (
+            <RecordCard
+              autoStart
+              onPicked={(paths) => saveCapture(paths, "Recording")}
+              onActiveChange={onCaptureActiveChange}
+              onDone={() => setAffordance(null)}
+            />
+          )}
+
+
+          {recordings.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {recordings.map((r) => {
+                const st = recordingStatus(r);
+                return (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => void onSelectRecording(r.id)}
+                      className="w-full flex items-center gap-3 text-left bg-control-background border border-separator rounded-card shadow-card px-4 py-3 hover:bg-fill-tertiary transition-colors"
+                    >
+                      <Icon name="recording" size="md" className="text-label-tertiary shrink-0" />
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-semibold text-label-primary truncate">
+                          {recordingTitle(r.name)}
+                        </span>
+                        <span className={cn("block text-footnote", st.tone)}>
+                          {st.text}
+                        </span>
+                      </span>
+                      <span className="shrink-0 bg-fill-tertiary rounded-full px-2 py-0.5 text-caption-1 text-label-secondary">
+                        {new Date(r.createdAt).toLocaleDateString()}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-footnote italic text-label-tertiary">
+              No recordings yet. Record a call, or drop an audio or video file here.
+            </p>
+          )}
+
+          {staging.length > 0 && (
+            <StagingList
+              paths={staging}
+              onReorder={setStaging}
+              onRemove={removeAt}
+              onCancel={cancelStaging}
+              onCreate={createFromStaging}
+              name={stagingName}
+              onNameChange={setStagingName}
+            />
+          )}
+
+        </section>
+
+        <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider -mb-5">
+          Project settings
+        </h2>
 
         {/* Collapsible template card */}
         <section className="bg-control-background border border-separator rounded-card shadow-card overflow-hidden">
@@ -346,99 +416,6 @@ export default function ProjectView({
             placeholder="Leave empty to use the global default"
           />
         </div>
-
-        {/* Recordings — drop target wraps the whole section */}
-        <section
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-          className={cn(
-            "flex flex-col gap-3 rounded-card -m-1 p-1 transition-colors",
-            dragging && "border-2 border-dashed border-accent bg-accent/10",
-          )}
-        >
-          <h2 className="text-footnote font-semibold text-label-tertiary uppercase tracking-wider">
-            Recordings
-          </h2>
-
-          {recordings.length > 0 ? (
-            <ul className="flex flex-col gap-2">
-              {recordings.map((r) => {
-                const st = recordingStatus(r);
-                return (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => void onSelectRecording(r.id)}
-                      className="w-full flex items-center gap-3 text-left bg-control-background border border-separator rounded-card shadow-card px-4 py-3 hover:bg-fill-tertiary transition-colors"
-                    >
-                      <Icon name="recording" size="md" className="text-label-tertiary shrink-0" />
-                      <span className="flex-1 min-w-0">
-                        <span className="block font-semibold text-label-primary truncate">
-                          {r.name}
-                        </span>
-                        <span className={cn("block text-footnote", st.tone)}>
-                          {st.text}
-                        </span>
-                      </span>
-                      <span className="shrink-0 bg-fill-tertiary rounded-full px-2 py-0.5 text-caption-1 text-label-secondary">
-                        {new Date(r.createdAt).toLocaleDateString()}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-footnote italic text-label-tertiary">
-              No recordings yet — record a call or drop a file below.
-            </p>
-          )}
-
-          {staging.length > 0 && (
-            <StagingList
-              paths={staging}
-              onReorder={setStaging}
-              onRemove={removeAt}
-              onCancel={cancelStaging}
-              onCreate={createFromStaging}
-              name={stagingName}
-              onNameChange={setStagingName}
-            />
-          )}
-
-          {/* Active capture surfaces, revealed by the pills below */}
-          {affordance === "call" && (
-            <RecordCallCard
-              onPicked={(paths) => saveCapture(paths, "Call")}
-              onActiveChange={onCaptureActiveChange}
-              onCancel={() => setAffordance(null)}
-            />
-          )}
-          {affordance === "audio" && (
-            <RecordCard
-              autoStart
-              onPicked={(paths) => saveCapture(paths, "Recording")}
-              onActiveChange={onCaptureActiveChange}
-              onDone={() => setAffordance(null)}
-            />
-          )}
-
-          {/* Pill actions */}
-          {affordance === null && (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="primary" size="md" onClick={() => setAffordance("call")}>
-                ● Record call
-              </Button>
-              <Button variant="secondary" size="md" onClick={() => setAffordance("audio")}>
-                Record audio
-              </Button>
-              <Button variant="secondary" size="md" onClick={() => void importFiles()}>
-                Import files…
-              </Button>
-            </div>
-          )}
-        </section>
 
         {/* Quiet, low-emphasis destructive action at the very bottom */}
         <div className="pt-2">

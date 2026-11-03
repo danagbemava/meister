@@ -38,9 +38,10 @@ export default function RecordingWaveform({ samples, state, className }: Props) 
     const barCount = Math.max(1, Math.floor(width / pitch));
     const bars = downsampleMax(samples, barCount);
 
-    const color = getComputedStyle(canvas).getPropertyValue(
-      state === "recording" ? "--accent" : "--label-tertiary",
-    ).trim() || (state === "recording" ? "#0a84ff" : "#999");
+    const css = getComputedStyle(canvas);
+    const color = state === "recording"
+      ? `rgb(${css.getPropertyValue("--color-accent-rgb").trim() || "128 128 128"})`
+      : css.getPropertyValue("--color-label-tertiary").trim() || "#999";
 
     ctx.fillStyle = color;
     for (let i = 0; i < bars.length; i++) {
@@ -55,7 +56,7 @@ export default function RecordingWaveform({ samples, state, className }: Props) 
   return (
     <canvas
       ref={canvasRef}
-      className={cn("block w-full h-full", className)}
+      className={cn("block w-full", className ?? "h-full")}
       aria-hidden="true"
     />
   );

@@ -47,9 +47,7 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
               Clear all
             </Button>
           )}
-          <Button variant="ghost" size="sm" aria-label="Close ask" onClick={onClose}>
-            ✕
-          </Button>
+          <Button variant="ghost" size="sm" iconLeft="x" aria-label="Close ask" onClick={onClose} />
         </div>
       </header>
 
@@ -92,7 +90,7 @@ export default function AskPanel({ recordingId, disabled, onCitationClick, onClo
                                   key={i}
                                   type="button"
                                   onClick={() => onCitationClick(c)}
-                                  className="text-left text-footnote bg-fill-quaternary border border-separator rounded-control px-2 py-1 hover:border-tint transition-colors"
+                                  className="text-left text-footnote bg-fill-quaternary border border-separator rounded-control px-2 py-1 hover:border-accent transition-colors"
                                 >
                                   &#x201C;{c.quote}&#x201D;
                                 </button>

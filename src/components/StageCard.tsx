@@ -18,7 +18,7 @@ interface Props {
 const LABELS: Record<StageKind, string> = {
   extract: "Extract audio",
   transcribe: "Transcribe",
-  format: "Format with LLM",
+  format: "Write notes",
 };
 
 const ICONS: Record<StageKind, IconName> = {
@@ -74,7 +74,7 @@ export default function StageCard({ kind, status, error, subtitle, progress, onR
         </div>
       )}
       {status === "failed" && error && (
-        <pre className="text-footnote text-status-error whitespace-pre-wrap font-mono">{error}</pre>
+        <p className="text-footnote text-status-error whitespace-pre-wrap">{error}</p>
       )}
     </div>
   );

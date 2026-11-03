@@ -32,7 +32,7 @@ pub struct CallCaptureSession {
     pub channels: u16,
     /// Kept alive for the lifetime of the session; dropped here stops the
     /// 30 fps drain task. Audio callbacks each hold their own `Arc` clone.
-    pub _amplitude: Arc<amplitude::AmplitudeEmitter>,
+    pub _meters: [Arc<amplitude::AmplitudeEmitter>; 2],
 }
 
 #[derive(Default)]
@@ -107,15 +107,19 @@ pub fn begin_session(
 
     let paused = Arc::new(AtomicBool::new(false));
 
-    let session_id_for_emit = id.clone();
-    let app_for_emit = app.clone();
-    let amplitude = Arc::new(amplitude::AmplitudeEmitter::spawn(move |rms| {
-        use tauri::Emitter;
-        let _ = app_for_emit.emit(
-            "call-capture-amplitude",
-            serde_json::json!({ "sessionId": session_id_for_emit, "rms": rms }),
-        );
-    }));
+    let meter = |source: &'static str| {
+        let session_id = id.clone();
+        let app = app.clone();
+        Arc::new(amplitude::AmplitudeEmitter::spawn(move |rms| {
+            use tauri::Emitter;
+            let _ = app.emit(
+                "call-capture-amplitude",
+                serde_json::json!({ "sessionId": session_id, "source": source, "rms": rms }),
+            );
+        }))
+    };
+    let system_meter = meter("system");
+    let mic_meter = meter("mic");
 
     // The ScreenCaptureKit mic tap shares the system-audio stream and clock and
     // keeps working when a call app changes the input device. cpal still runs
@@ -124,7 +128,7 @@ pub fn begin_session(
     let sck_mic_arg = use_sck_mic.then_some(sck_mic_wav.as_path());
 
     // System audio first — if permission isn't granted, we bail.
-    let system_handle = match system_audio::start_system_capture(&system_wav, sck_mic_arg, paused.clone(), amplitude.clone()) {
+    let system_handle = match system_audio::start_system_capture(&system_wav, sck_mic_arg, paused.clone(), system_meter.clone(), mic_meter.clone()) {
         Ok(h) => h,
         Err(e) if e == "not-authorized" => {
             let _ = std::fs::remove_dir_all(&dir);
@@ -143,7 +147,7 @@ pub fn begin_session(
 
     // Mic is best-effort when requested.
     let (mic_handle, mic_path, mic_ok, mic_error) = if include_mic {
-        match mic_audio::start_mic_capture(&mic_wav, paused.clone(), amplitude.clone()) {
+        match mic_audio::start_mic_capture(&mic_wav, paused.clone(), mic_meter.clone()) {
             Ok(h) => (Some(h), Some(mic_wav.clone()), true, None),
             Err(e) => (None, None, false, Some(e)),
         }
@@ -162,7 +166,7 @@ pub fn begin_session(
         mic_handle,
         sample_rate: system_audio::SAMPLE_RATE,
         channels: system_audio::CHANNELS,
-        _amplitude: amplitude,
+        _meters: [system_meter, mic_meter],
     };
 
     registry.sessions.lock().unwrap().insert(id.clone(), session);

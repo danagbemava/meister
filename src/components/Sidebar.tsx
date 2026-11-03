@@ -14,6 +14,8 @@ import { api } from "../api/storage";
 import type { Selection } from "../App";
 import { Button, ContextMenu, Icon, Input } from "./ui";
 import { folderColorFor } from "../lib/folderColor";
+import { recordingTitle } from "../lib/recordingTitle";
+import { uniqueName } from "../lib/uniqueName";
 
 export interface SidebarHandle {
   beginNewProject: () => void;
@@ -120,7 +122,8 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
       setCreating(false);
       return;
     }
-    await api.createProject(name, { source: "inline", content: "", sourcePath: null });
+    const unique = uniqueName(name, projects.map((p) => p.name));
+    await api.createProject(unique, { source: "inline", content: "", sourcePath: null });
     setCreating(false);
     setNewName("");
     onProjectsChanged();
@@ -148,7 +151,8 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
       setRenamingProject(null);
       return;
     }
-    await api.updateProject({ ...project, name: newNameTrimmed });
+    const others = projects.filter((p) => p.id !== id).map((p) => p.name);
+    await api.updateProject({ ...project, name: uniqueName(newNameTrimmed, others) });
     setRenamingProject(null);
     onProjectsChanged();
   };
@@ -373,7 +377,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                             void onSelect({ kind: "recording", projectId: p.id, recordingId: rec.id });
                           }
                         }}
-                        aria-label={`${rec.name}, recording`}
+                        aria-label={`${recordingTitle(rec.name)}, recording`}
                         aria-current={recSel ? "page" : undefined}
                         className="mx-2 my-px h-[34px] pl-[30px] pr-2.5 rounded-control flex items-center gap-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                         style={
@@ -409,12 +413,14 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                             onBlur={() => void renameRecording(p.id, rec.id)}
                           />
                         ) : (
-                          <span className="flex-1 truncate">{rec.name}</span>
+                          <span className="flex-1 truncate" title={recordingTitle(rec.name)}>
+                            {recordingTitle(rec.name)}
+                          </span>
                         )}
                       </div>
                     </ContextMenu.Trigger>
                     <ContextMenu.Content>
-                      <ContextMenu.Item onSelect={() => { setRenameValue(rec.name); setRenamingRecording(rec.id); }}>
+                      <ContextMenu.Item onSelect={() => { setRenameValue(recordingTitle(rec.name)); setRenamingRecording(rec.id); }}>
                         Rename
                       </ContextMenu.Item>
                       <ContextMenu.Item onSelect={() => void deleteRecording(p.id, rec.id, rec.name)}>
