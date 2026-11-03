@@ -10,6 +10,7 @@ import type { Project, Recording } from "../types/storage";
 import { Button, Icon, Input, Textarea, Toolbar } from "./ui";
 import { useScrollEdge } from "../lib/useScrollEdge";
 import { cn } from "../lib/cn";
+import { subscribe } from "../lib/subscribe";
 
 interface Props {
   projectId: string;
@@ -108,6 +109,8 @@ export default function ProjectView({
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => subscribe("stage-changed", () => { refreshRecordings(); }), [refreshRecordings]);
+
   // Clear staging + transient affordance when switching projects.
   useEffect(() => {
     setStaging([]);
@@ -164,6 +167,20 @@ export default function ProjectView({
     setStagingName("");
     setRecordings((rs) => [...rs, rec]);
     onRecordingCreated(rec);
+  };
+
+  const saveCapture = async (paths: string[], label: string) => {
+    setAffordance(null);
+    const stamp = new Date().toLocaleString(undefined, {
+      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+    try {
+      const rec = await api.createRecording(projectId, `${label} · ${stamp}`, paths);
+      setRecordings((rs) => [...rs, rec]);
+      onRecordingCreated(rec);
+    } catch {
+      onFilesPicked(paths);
+    }
   };
 
   const importFiles = async () => {
@@ -393,7 +410,7 @@ export default function ProjectView({
           {/* Active capture surfaces, revealed by the pills below */}
           {affordance === "call" && (
             <RecordCallCard
-              onPicked={(paths) => { onFilesPicked(paths); setAffordance(null); }}
+              onPicked={(paths) => saveCapture(paths, "Call")}
               onActiveChange={onCaptureActiveChange}
               onCancel={() => setAffordance(null)}
             />
@@ -401,7 +418,7 @@ export default function ProjectView({
           {affordance === "audio" && (
             <RecordCard
               autoStart
-              onPicked={(paths) => { onFilesPicked(paths); setAffordance(null); }}
+              onPicked={(paths) => saveCapture(paths, "Recording")}
               onActiveChange={onCaptureActiveChange}
               onDone={() => setAffordance(null)}
             />

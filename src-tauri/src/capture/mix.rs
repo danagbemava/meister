@@ -14,12 +14,8 @@ pub fn encode_final(
         std::fs::create_dir_all(parent).map_err(|e| format!("create output dir: {e}"))?;
     }
     let args: Vec<String> = if let Some(mic) = mic_wav {
-        // Per-input aresample to 48 kHz *before* amix is required: amix mixes
-        // its inputs at the sample rate of input #0 and only auto-aligns when
-        // both inputs already declare the same rate. The system_audio WAV is
-        // now written at the platform's actual delivered rate (which can be
-        // 24/16/12 kHz depending on hardware state), so explicitly upsampling
-        // each input first guarantees correct alignment.
+        // Both tracks are 48 kHz already; aresample is a guard for amix,
+        // which only aligns inputs that declare the same rate.
         vec![
             "-i".into(), system_wav.to_string_lossy().into_owned(),
             "-i".into(), mic.to_string_lossy().into_owned(),
@@ -34,9 +30,6 @@ pub fn encode_final(
             output_webm.to_string_lossy().into_owned(),
         ]
     } else {
-        // Single-input path: aresample to 48 kHz so the opus encoder always
-        // sees its standard rate even if the system_audio WAV is at a lower
-        // delivered rate.
         vec![
             "-i".into(), system_wav.to_string_lossy().into_owned(),
             "-af".into(), "aresample=48000".into(),

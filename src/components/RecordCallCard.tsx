@@ -58,22 +58,32 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     }, 200);
   };
 
-  useEffect(() => {
-    return () => { stopTicker(); };
-  }, []);
+  const onActiveChangeRef = useRef(onActiveChange);
+  onActiveChangeRef.current = onActiveChange;
 
-  const discard = async () => {
+  const releaseSession = () => {
     const id = sessionRef.current;
     stopTicker();
     sessionRef.current = null;
     setSessionId(null);
-    onActiveChange?.(null);
-    if (id) {
-      try { await api.discardCallCapture(id); } catch { /* best-effort */ }
-    }
+    if (!id) return;
+    onActiveChangeRef.current?.(null);
+    api.discardCallCapture(id).catch(() => {});
+  };
+
+  useEffect(() => releaseSession, []);
+
+  const resetToIdle = () => {
+    releaseSession();
     setState("idle");
+    setErrorMsg("");
+    setMicError("");
     setElapsedMs(0);
     accumulatedRef.current = 0;
+  };
+
+  const discard = () => {
+    resetToIdle();
     onCancel?.();
   };
 
@@ -96,7 +106,7 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
       startedAtRef.current = Date.now();
       startTicker();
       setState("recording");
-      onActiveChange?.(() => { void discard(); });
+      onActiveChange?.(discard);
     } catch (e) {
       setState("error");
       setErrorMsg(String(e));
@@ -135,12 +145,12 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     const id = sessionRef.current;
     if (!id) return;
     stopTicker();
+    sessionRef.current = null;
+    setSessionId(null);
+    onActiveChange?.(null);
     setState("saving");
     try {
       const path = await api.stopCallCapture(id);
-      sessionRef.current = null;
-      setSessionId(null);
-      onActiveChange?.(null);
       setElapsedMs(0);
       accumulatedRef.current = 0;
       setState("idle");
@@ -160,11 +170,7 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     } catch { /* ignore */ }
   };
 
-  const retry = () => {
-    setState("idle");
-    setErrorMsg("");
-    setMicError("");
-  };
+  const retry = resetToIdle;
 
   const cardBase =
     "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";

@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { subscribe } from "../lib/subscribe";
 import { open, confirm as dialogConfirm } from "@tauri-apps/plugin-dialog";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import StageCard from "./StageCard";
@@ -112,27 +112,22 @@ const RecordingView = forwardRef<RecordingViewHandle, Props>(function RecordingV
   useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
-    let unlisten1: UnlistenFn | undefined;
-    let unlisten2: UnlistenFn | undefined;
-    listen<{ percent: number }>("transcribe-progress", (e) =>
+    const offTranscribe = subscribe<{ percent: number }>("transcribe-progress", (e) =>
       setTranscribePct(e.payload.percent)
-    ).then((fn) => { unlisten1 = fn; });
-    listen<FormatProgressPayload>("format-progress", (e) =>
+    );
+    const offFormat = subscribe<FormatProgressPayload>("format-progress", (e) =>
       setFormatProgress(e.payload)
-    ).then((fn) => { unlisten2 = fn; });
-    return () => { unlisten1?.(); unlisten2?.(); };
+    );
+    return () => { offTranscribe(); offFormat(); };
   }, []);
 
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen<{ recordingId: string; stage: string; status: string }>(
-      "stage-changed",
-      (e) => {
+  useEffect(
+    () =>
+      subscribe<{ recordingId: string }>("stage-changed", (e) => {
         if (e.payload.recordingId === recordingId) reload();
-      },
-    ).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, [recordingId, reload]);
+      }),
+    [recordingId, reload],
+  );
 
   const runRef = useRef<() => void>(() => {});
   const exportFlowRef = useRef<() => void>(() => {});
