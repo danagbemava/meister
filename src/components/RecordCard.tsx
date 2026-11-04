@@ -94,8 +94,10 @@ export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone
 
   // Once an auto-started capture returns to idle (saved/discarded), tell the
   // parent so it can unmount this transient component.
+  const leftIdleRef = useRef(false);
   useEffect(() => {
-    if (autoStart && autoStartedRef.current && state === "idle") onDone?.();
+    if (state !== "idle") leftIdleRef.current = true;
+    else if (autoStart && leftIdleRef.current) onDone?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart, state]);
 
