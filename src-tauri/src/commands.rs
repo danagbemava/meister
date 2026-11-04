@@ -322,6 +322,17 @@ fn collapse_stutters(input: &str) -> String {
 pub(crate) const THRESHOLD: usize = 4000;
 pub(crate) const CHUNK_TARGET: usize = 3000;
 pub(crate) const CHUNK_OVERLAP: usize = 200;
+/// Format uses one LLM call up to this many transcript tokens. Writing the
+/// notes once is much faster than writing notes per chunk and then rewriting
+/// them in a reduce pass. Longer transcripts still use map-reduce.
+const FORMAT_SINGLE_CALL_MAX: usize = 24_000;
+/// Context room kept free for the generated notes.
+const OUTPUT_RESERVE_TOKENS: usize = 4096;
+
+fn single_call_num_ctx(prompt: &str) -> u32 {
+    let needed = approx_tokens(prompt) + OUTPUT_RESERVE_TOKENS;
+    needed.max(8192).next_multiple_of(1024) as u32
+}
 /// Approximation: 1 token ≈ 4 chars.
 const CHARS_PER_TOKEN: usize = 4;
 const BOUNDARY_SEARCH_WINDOW_CHARS: usize = 500;
@@ -506,17 +517,22 @@ pub(crate) async fn ollama_stream(
         prompt: String,
         stream: bool,
         keep_alive: &'a str,
+        think: bool,
         options: Options,
     }
 
-    const REQUEST_TIMEOUT_SECS: u64 = 480;
+    const REQUEST_TIMEOUT_SECS: u64 = 1800;
     const INACTIVITY_TIMEOUT_SECS: u64 = 120;
+    // Ollama sends nothing while it reads a long prompt, so the first byte
+    // gets a longer allowance than the gap between streamed tokens.
+    const FIRST_BYTE_TIMEOUT_SECS: u64 = 900;
 
     let body = Req {
         model,
         prompt,
         stream: true,
         keep_alive: "30m",
+        think: false,
         options: Options { num_ctx, num_predict: -1 },
     };
 
@@ -538,6 +554,7 @@ pub(crate) async fn ollama_stream(
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
     let mut accumulated = String::new();
+    let mut started = false;
     loop {
         let cancel_fut = async {
             match cancel {
@@ -545,10 +562,8 @@ pub(crate) async fn ollama_stream(
                 None => std::future::pending::<()>().await,
             }
         };
-        let next_fut = tokio::time::timeout(
-            std::time::Duration::from_secs(INACTIVITY_TIMEOUT_SECS),
-            stream.next(),
-        );
+        let wait = if started { INACTIVITY_TIMEOUT_SECS } else { FIRST_BYTE_TIMEOUT_SECS };
+        let next_fut = tokio::time::timeout(std::time::Duration::from_secs(wait), stream.next());
         let next = tokio::select! {
             biased;
             _ = cancel_fut => return Err("cancelled".into()),
@@ -559,11 +574,12 @@ pub(crate) async fn ollama_stream(
             Ok(None) => break,
             Err(_) => {
                 return Err(format!(
-                    "Ollama at {ollama_url} stopped responding (no data for {INACTIVITY_TIMEOUT_SECS}s). The model may have been unloaded or the server crashed. Try: pkill ollama && OLLAMA_NUM_PARALLEL=3 ollama serve, then re-run."
+                    "Ollama at {ollama_url} stopped responding (no data for {wait}s). The model may have been unloaded or the server crashed. Try: pkill ollama && OLLAMA_NUM_PARALLEL=3 ollama serve, then re-run."
                 ));
             }
         };
         let bytes = chunk_bytes.map_err(|e| format!("Ollama stream error: {e}"))?;
+        started = true;
         buf.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(nl) = buf.find('\n') {
             let line = buf[..nl].to_string();
@@ -809,15 +825,16 @@ pub(crate) async fn run_format_core(
 
     let cleaned = preprocess(transcript);
 
-    let final_output = if approx_tokens(&cleaned) < THRESHOLD {
+    let final_output = if approx_tokens(&cleaned) < FORMAT_SINGLE_CALL_MAX {
         let prompt = build_prompt(&cleaned, template, match_style, custom_instructions);
+        let num_ctx = single_call_num_ctx(&prompt);
         let single_cb = {
             let on_progress = on_progress.clone();
             move |p: FormatProgress| on_progress(p)
         };
         let boxed: Box<dyn Fn(FormatProgress) + Send + Sync> = Box::new(single_cb);
         let out = ollama_generate_stream(
-            ollama_url, model, prompt, 8192,
+            ollama_url, model, prompt, num_ctx,
             FormatPhase::Single, None, &*boxed,
             cancel.as_ref(),
         ).await?;
@@ -1809,6 +1826,24 @@ mod tests {
         assert_eq!(calls[0]["keep_alive"], "30m");
         assert_eq!(calls[0]["options"]["num_ctx"], 8192);
         assert_eq!(calls[0]["options"]["num_predict"], -1);
+        assert_eq!(calls[0]["think"], false);
+    }
+
+    #[tokio::test]
+    async fn meeting_length_transcript_is_formatted_in_one_call() {
+        let transcript = "We agreed to move the retreat to the 21st and collect names. ".repeat(1000);
+        let mock = MockOllama::spawn(|_body| "NOTES".to_string()).await;
+        let tmp = tempfile::tempdir().unwrap();
+
+        run_format_core(&transcript, "# Template", &mock.base_url, "gemma3", false, "", tmp.path(), noop_progress(), None)
+            .await
+            .unwrap();
+
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let num_ctx = calls[0]["options"]["num_ctx"].as_u64().unwrap() as usize;
+        let prompt_tokens = calls[0]["prompt"].as_str().unwrap().len() / 4;
+        assert!(num_ctx >= prompt_tokens + OUTPUT_RESERVE_TOKENS, "num_ctx {num_ctx} too small for {prompt_tokens}-token prompt");
     }
 
     #[tokio::test]
@@ -1817,7 +1852,7 @@ mod tests {
         // branch of the heuristic. The map/reduce *shape* is what we assert
         // here — concurrency tuning is an internal detail covered separately.
         let sentence = "This is a long sentence that will get split eventually. ";
-        let transcript: String = sentence.repeat(500);
+        let transcript: String = sentence.repeat(1800);
 
         let mock = MockOllama::spawn(|body| {
             let prompt = body["prompt"].as_str().unwrap_or("");
@@ -1883,7 +1918,7 @@ mod tests {
     #[tokio::test]
     async fn progress_events_order_map_then_reduce_then_done() {
         let sentence = "This is a long sentence that will get split eventually. ";
-        let transcript: String = sentence.repeat(500);
+        let transcript: String = sentence.repeat(1800);
 
         let mock = MockOllama::spawn(|b| {
             if b["prompt"].as_str().unwrap().contains("note-taker") {
