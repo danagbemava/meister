@@ -178,6 +178,7 @@ export default function App() {
         )}
         {selection.kind === "recording" && (
           <RecordingView
+            key={selection.recordingId}
             ref={recordingViewRef}
             recordingId={selection.recordingId}
             onRecordingChanged={() => refreshRecordings(selection.projectId)}

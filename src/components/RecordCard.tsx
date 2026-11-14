@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, Icon } from "./ui";
-import RecordingWaveform from "./RecordingWaveform";
+import CaptureLive from "./CaptureLive";
 import { useMicAmplitude } from "../lib/useMicAmplitude";
 
 type CaptureState = "idle" | "recording" | "paused" | "saving" | "error";
@@ -18,15 +18,6 @@ interface Props {
   /** Fired when the capture flow returns to idle (saved, discarded, or
    *  retry-exhausted) so the parent can unmount this transient component. */
   onDone?: () => void;
-}
-
-function formatElapsed(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  const hh = Math.floor(total / 3600);
-  const mm = Math.floor((total % 3600) / 60);
-  const ss = total % 60;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return hh > 0 ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : `${pad(mm)}:${pad(ss)}`;
 }
 
 function pickMime(): string | undefined {
@@ -103,8 +94,10 @@ export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone
 
   // Once an auto-started capture returns to idle (saved/discarded), tell the
   // parent so it can unmount this transient component.
+  const leftIdleRef = useRef(false);
   useEffect(() => {
-    if (autoStart && autoStartedRef.current && state === "idle") onDone?.();
+    if (state !== "idle") leftIdleRef.current = true;
+    else if (autoStart && leftIdleRef.current) onDone?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart, state]);
 
@@ -248,49 +241,15 @@ export default function RecordCard({ onPicked, onActiveChange, autoStart, onDone
 
   if (state === "recording" || state === "paused") {
     return (
-      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-fill-quaternary`}>
-        <div className="w-full flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              state === "recording"
-                ? "bg-status-error animate-pulse"
-                : "bg-status-warning"
-            }`}
-          />
-          <span className="text-callout font-mono tabular-nums text-label-secondary">
-            {formatElapsed(elapsedMs)}
-          </span>
-          {state === "paused" && (
-            <span className="text-footnote text-label-tertiary ml-2">Paused</span>
-          )}
-        </div>
-
-        <RecordingWaveform
-          samples={micAmp.samples}
-          state={state === "recording" ? "recording" : "paused"}
-          className="h-16"
-        />
-
-        <div className="w-full flex items-center gap-2">
-          {state === "recording" ? (
-            <Button onClick={pause} variant="secondary" size="md" iconLeft="pause" aria-label="Pause" />
-          ) : (
-            <Button onClick={resume} variant="primary" size="md" iconLeft="play">Resume</Button>
-          )}
-          <Button onClick={stop} variant={state === "paused" ? "secondary" : "primary"} size="md" iconLeft="stop">
-            Stop
-          </Button>
-          <Button
-            onClick={discard}
-            variant="ghost"
-            size="md"
-            iconLeft="trash"
-            className="ml-auto hover:bg-status-error/20"
-          >
-            Discard
-          </Button>
-        </div>
-      </div>
+      <CaptureLive
+        live={state === "recording"}
+        elapsedMs={elapsedMs}
+        meters={[{ label: "Microphone", samples: micAmp.samples }]}
+        onStop={stop}
+        onPause={pause}
+        onResume={resume}
+        onDiscard={discard}
+      />
     );
   }
 

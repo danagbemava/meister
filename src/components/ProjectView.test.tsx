@@ -128,7 +128,7 @@ describe("ProjectView recordings rows", () => {
     expect(onSelect).toHaveBeenCalledWith("rec-1");
   });
 
-  it("shows the 'new' status line for a freshly created recording (empty stages)", async () => {
+  it("shows the 'Not processed yet' status line for a freshly created recording (empty stages)", async () => {
     vi.mocked(api.listProjects).mockResolvedValue([makeProject()]);
     vi.mocked(api.listRecordings).mockResolvedValue([
       makeRecording("rec-new", "Fresh recording", []),
@@ -138,7 +138,7 @@ describe("ProjectView recordings rows", () => {
     const row = await screen.findByRole("button", { name: /Fresh recording/i });
     // A new recording (no stages) must NOT report itself as transcribed/formatted.
     expect(row).not.toHaveTextContent(/Transcribed/i);
-    const status = within(row).getByText("new");
+    const status = within(row).getByText("Not processed yet");
     expect(status).toHaveClass("text-label-tertiary");
   });
 

@@ -23,7 +23,7 @@ describe("useTauriAmplitude", () => {
   });
 
   it("only pushes events whose sessionId matches", async () => {
-    let handler: ((e: { payload: { sessionId: string; rms: number } }) => void) | null = null;
+    let handler: ((e: { payload: { sessionId: string; source: string; rms: number } }) => void) | null = null;
     listenMock.mockImplementation(async (_name: string, cb: (e: unknown) => void) => {
       handler = cb as typeof handler;
       return () => {};
@@ -34,9 +34,10 @@ describe("useTauriAmplitude", () => {
     expect(handler).not.toBeNull();
 
     await act(async () => {
-      handler!({ payload: { sessionId: "session-1", rms: 0.4 } });
-      handler!({ payload: { sessionId: "other", rms: 0.9 } });
-      handler!({ payload: { sessionId: "session-1", rms: 0.6 } });
+      handler!({ payload: { sessionId: "session-1", source: "system", rms: 0.4 } });
+      handler!({ payload: { sessionId: "other", source: "system", rms: 0.9 } });
+      handler!({ payload: { sessionId: "session-1", source: "mic", rms: 0.9 } });
+      handler!({ payload: { sessionId: "session-1", source: "system", rms: 0.6 } });
     });
 
     const { samples } = result.current;

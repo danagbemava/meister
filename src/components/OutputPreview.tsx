@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { SegmentedControl } from "./ui";
+import { Button, SegmentedControl } from "./ui";
+import Notes from "./Notes";
 
 interface Props {
   transcript?: string | null;
@@ -27,6 +28,8 @@ export default function OutputPreview({
   const [tab, setTab] = useState<"formatted" | "transcript">(
     hasFormatted ? "formatted" : "transcript",
   );
+  const [editing, setEditing] = useState(false);
+  const canEdit = !!onFormattedChange && !formattedReadOnly;
 
   useEffect(() => {
     if (tab === "formatted" && !hasFormatted && hasTranscript) setTab("transcript");
@@ -77,39 +80,58 @@ export default function OutputPreview({
     );
   };
 
+  const frame = "flex-1 min-h-0 border border-separator rounded-card overflow-y-auto scrollable";
+  const surface = `${frame} bg-control-background shadow-card`;
+
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-3">
-      <SegmentedControl
-        size="sm"
-        value={tab}
-        onValueChange={(v) => setTab(v as "formatted" | "transcript")}
-        aria-label="Output view"
-      >
-        <SegmentedControl.Item value="formatted" disabled={!hasFormatted}>
-          Formatted
-        </SegmentedControl.Item>
-        <SegmentedControl.Item value="transcript" disabled={!hasTranscript}>
-          Transcript
-        </SegmentedControl.Item>
-      </SegmentedControl>
+      <div className="flex items-center gap-2">
+        <SegmentedControl
+          size="sm"
+          value={tab}
+          onValueChange={(v) => setTab(v as "formatted" | "transcript")}
+          aria-label="Output view"
+        >
+          <SegmentedControl.Item value="formatted" disabled={!hasFormatted}>
+            Notes
+          </SegmentedControl.Item>
+          <SegmentedControl.Item value="transcript" disabled={!hasTranscript}>
+            Transcript
+          </SegmentedControl.Item>
+        </SegmentedControl>
+        {tab === "formatted" && canEdit && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            iconLeft={editing ? "check" : undefined}
+            onClick={() => setEditing((v) => !v)}
+          >
+            {editing ? "Done" : "Edit"}
+          </Button>
+        )}
+      </div>
       {tab === "formatted" ? (
-        onFormattedChange && !formattedReadOnly ? (
+        canEdit && editing ? (
           <textarea
+            autoFocus
             value={formatted ?? ""}
-            onChange={(e) => onFormattedChange(e.target.value)}
+            onChange={(e) => onFormattedChange!(e.target.value)}
             spellCheck
-            className="flex-1 min-h-0 bg-control-background shadow-card border border-separator rounded-control p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable resize-none outline-none focus:border-tint"
-            aria-label="Formatted output"
+            className={`${surface} px-6 py-5 text-body leading-relaxed text-label-primary resize-none outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:border-accent`}
+            aria-label="Edit notes (markdown)"
           />
         ) : (
-          <pre className="flex-1 min-h-0 bg-control-background shadow-card border border-separator rounded-control p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
-            {formatted ?? ""}
-          </pre>
+          <div className={`${surface} px-8 py-7`}>
+            <Notes markdown={formatted ?? ""} />
+          </div>
         )
       ) : (
-        <pre className="flex-1 min-h-0 bg-fill-quaternary border border-separator rounded-control p-4 text-callout font-mono text-label-primary whitespace-pre-wrap overflow-y-auto scrollable">
-          {renderTranscript()}
-        </pre>
+        <div className={`${frame} bg-fill-quaternary px-8 py-7`}>
+          <p className="max-w-[75ch] text-body leading-relaxed text-label-primary whitespace-pre-wrap">
+            {renderTranscript()}
+          </p>
+        </div>
       )}
     </div>
   );

@@ -223,8 +223,7 @@ pub async fn run_recording(
                     })
                 }
             }
-            StageKind::Format => {
-                // Load transcript from transcribe stage output.
+            StageKind::Format => async {
                 let rec2 = storage::recordings::get(&store, &recording_id)
                     .map_err(|e| format!("reload for format: {e}"))?
                     .ok_or_else(|| "recording vanished".to_string())?;
@@ -245,13 +244,14 @@ pub async fn run_recording(
                     Some(cancel.clone()),
                 )
                 .await?;
-                Ok(storage::stages::CompletedOutput {
+                Ok::<_, String>(storage::stages::CompletedOutput {
                     output: Some(formatted),
                     model_used: Some(effective.model.clone()),
                     template_hash: Some(template_hash.clone()),
                     completed_at: now_ms(),
                 })
             }
+            .await,
         };
 
         match result {

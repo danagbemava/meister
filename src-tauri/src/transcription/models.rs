@@ -7,6 +7,7 @@ pub enum ModelSize {
     Small,
     Medium,
     Large,
+    Turbo,
 }
 
 impl ModelSize {
@@ -17,6 +18,7 @@ impl ModelSize {
             "small" => Some(Self::Small),
             "medium" => Some(Self::Medium),
             "large" => Some(Self::Large),
+            "turbo" => Some(Self::Turbo),
             _ => None,
         }
     }
@@ -28,6 +30,26 @@ impl ModelSize {
             Self::Small => "small",
             Self::Medium => "medium",
             Self::Large => "large",
+            Self::Turbo => "turbo",
+        }
+    }
+
+    /// File name stem on Hugging Face. whisper.cpp strips a `-qN_N` suffix
+    /// when it looks for the CoreML encoder, so the quantized turbo weights
+    /// pair with the plain turbo encoder.
+    fn bin_stem(&self) -> &'static str {
+        match self {
+            Self::Large => "large-v3",
+            Self::Turbo => "large-v3-turbo-q5_0",
+            other => other.as_str(),
+        }
+    }
+
+    fn encoder_stem(&self) -> &'static str {
+        match self {
+            Self::Large => "large-v3",
+            Self::Turbo => "large-v3-turbo",
+            other => other.as_str(),
         }
     }
 
@@ -40,17 +62,18 @@ impl ModelSize {
             Self::Base => 148 * 1024 * 1024 + 75 * 1024 * 1024,
             Self::Small => 488 * 1024 * 1024 + 230 * 1024 * 1024,
             Self::Medium => 1_500 * 1024 * 1024 + 700 * 1024 * 1024,
-            Self::Large => 3_100 * 1024 * 1024 + 1_500 * 1024 * 1024,
+            Self::Large => 3_100 * 1024 * 1024 + 1_200 * 1024 * 1024,
+            Self::Turbo => 548 * 1024 * 1024 + 1_200 * 1024 * 1024,
         }
     }
 }
 
 pub fn bin_filename(size: ModelSize) -> String {
-    format!("ggml-{}.bin", size.as_str())
+    format!("ggml-{}.bin", size.bin_stem())
 }
 
 pub fn encoder_dirname(size: ModelSize) -> String {
-    format!("ggml-{}-encoder.mlmodelc", size.as_str())
+    format!("ggml-{}-encoder.mlmodelc", size.encoder_stem())
 }
 
 pub fn model_paths(models_dir: &std::path::Path, size: ModelSize) -> (PathBuf, PathBuf) {
@@ -69,12 +92,13 @@ pub struct ModelInfo {
     pub size_bytes: u64,
 }
 
-const ALL_SIZES: [ModelSize; 5] = [
+const ALL_SIZES: [ModelSize; 6] = [
     ModelSize::Tiny,
     ModelSize::Base,
     ModelSize::Small,
     ModelSize::Medium,
     ModelSize::Large,
+    ModelSize::Turbo,
 ];
 
 pub fn list_available_models(models_dir: &std::path::Path) -> Vec<ModelInfo> {
@@ -198,10 +222,10 @@ pub async fn download_model(
     std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("create tmp dir: {e}"))?;
 
     let bin_url = format!("{HF_BASE}/{}", bin_filename(size));
-    let enc_url = format!("{HF_BASE}/ggml-{}-encoder.mlmodelc.zip", size.as_str());
+    let enc_url = format!("{HF_BASE}/{}.zip", encoder_dirname(size));
 
     let staged_bin = tmp_dir.join(bin_filename(size));
-    let staged_zip = tmp_dir.join(format!("{}-encoder.mlmodelc.zip", size.as_str()));
+    let staged_zip = tmp_dir.join(format!("{}.zip", encoder_dirname(size)));
 
     let total_estimate = size.approx_bundle_bytes();
     let mut downloaded: u64 = 0;
@@ -264,7 +288,7 @@ mod tests {
 
     #[test]
     fn round_trips_str_form() {
-        for s in ["tiny", "base", "small", "medium", "large"] {
+        for s in ["tiny", "base", "small", "medium", "large", "turbo"] {
             let m = ModelSize::from_str(s).unwrap();
             assert_eq!(m.as_str(), s);
         }
@@ -279,6 +303,17 @@ mod tests {
     }
 
     #[test]
+    fn large_and_turbo_use_files_that_exist_upstream() {
+        let dir = std::path::Path::new("/m");
+        let (bin, enc) = model_paths(dir, ModelSize::Large);
+        assert_eq!(bin, dir.join("ggml-large-v3.bin"));
+        assert_eq!(enc, dir.join("ggml-large-v3-encoder.mlmodelc"));
+        let (bin, enc) = model_paths(dir, ModelSize::Turbo);
+        assert_eq!(bin, dir.join("ggml-large-v3-turbo-q5_0.bin"));
+        assert_eq!(enc, dir.join("ggml-large-v3-turbo-encoder.mlmodelc"));
+    }
+
+    #[test]
     fn bundle_bytes_are_increasing() {
         let sizes = [ModelSize::Tiny, ModelSize::Base, ModelSize::Small, ModelSize::Medium, ModelSize::Large];
         for w in sizes.windows(2) {
@@ -290,7 +325,7 @@ mod tests {
     fn lists_no_models_in_empty_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let infos = list_available_models(tmp.path());
-        assert_eq!(infos.len(), 5);
+        assert_eq!(infos.len(), 6);
         assert!(infos.iter().all(|i| !i.downloaded));
     }
 

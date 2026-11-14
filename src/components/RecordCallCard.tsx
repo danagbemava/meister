@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../api/storage";
 import { Button, Checkbox, Icon } from "./ui";
-import RecordingWaveform from "./RecordingWaveform";
+import CaptureLive from "./CaptureLive";
 import { useTauriAmplitude } from "../lib/useTauriAmplitude";
 
 type CaptureState =
@@ -21,14 +21,6 @@ interface Props {
   onCancel?: () => void;
 }
 
-function formatElapsed(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  const hh = Math.floor(total / 3600);
-  const mm = Math.floor((total % 3600) / 60);
-  const ss = total % 60;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return hh > 0 ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : `${pad(mm)}:${pad(ss)}`;
-}
 
 export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: Props) {
   const [state, setState] = useState<CaptureState>("idle");
@@ -44,7 +36,9 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
   const accumulatedRef = useRef<number>(0);
   const tickerRef = useRef<number | null>(null);
 
-  const sysAmp = useTauriAmplitude(sessionId);
+  const sysAmp = useTauriAmplitude(sessionId, "system");
+  const micAmp = useTauriAmplitude(sessionId, "mic");
+  const [micOn, setMicOn] = useState(false);
 
   const stopTicker = () => {
     if (tickerRef.current !== null) {
@@ -60,9 +54,20 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     }, 200);
   };
 
-  useEffect(() => {
-    return () => { stopTicker(); };
-  }, []);
+  const onActiveChangeRef = useRef(onActiveChange);
+  onActiveChangeRef.current = onActiveChange;
+
+  const releaseSession = () => {
+    const id = sessionRef.current;
+    stopTicker();
+    sessionRef.current = null;
+    setSessionId(null);
+    if (!id) return;
+    onActiveChangeRef.current?.(null);
+    api.discardCallCapture(id).catch(() => {});
+  };
+
+  useEffect(() => releaseSession, []);
 
   // The backend emits this when the ScreenCaptureKit stream dies mid-session
   // (display sleep, screen lock, replayd restart). Recording keeps running but
@@ -99,25 +104,23 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     };
   }, [sessionId]);
 
-  const discard = async () => {
-    const id = sessionRef.current;
-    stopTicker();
-    sessionRef.current = null;
-    setSessionId(null);
-    onActiveChange?.(null);
-    if (id) {
-      try { await api.discardCallCapture(id); } catch { /* best-effort */ }
-    }
+  const resetToIdle = () => {
+    releaseSession();
     setState("idle");
+    setErrorMsg("");
+    setMicError("");
     setElapsedMs(0);
     accumulatedRef.current = 0;
+  };
+
+  const discard = () => {
+    resetToIdle();
     onCancel?.();
   };
 
   const start = async () => {
     setErrorMsg("");
     setMicError("");
-    setStreamWarning("");
     setElapsedMs(0);
     accumulatedRef.current = 0;
     try {
@@ -129,12 +132,13 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
       if (includeMic && !result.micOk) {
         setMicError(result.micError ?? "Microphone unavailable — recording system audio only.");
       }
+      setMicOn(includeMic && result.micOk);
       sessionRef.current = result.sessionId;
       setSessionId(result.sessionId);
       startedAtRef.current = Date.now();
       startTicker();
       setState("recording");
-      onActiveChange?.(() => { void discard(); });
+      onActiveChange?.(discard);
     } catch (e) {
       setState("error");
       setErrorMsg(String(e));
@@ -173,12 +177,12 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     const id = sessionRef.current;
     if (!id) return;
     stopTicker();
+    sessionRef.current = null;
+    setSessionId(null);
+    onActiveChange?.(null);
     setState("saving");
     try {
       const path = await api.stopCallCapture(id);
-      sessionRef.current = null;
-      setSessionId(null);
-      onActiveChange?.(null);
       setElapsedMs(0);
       accumulatedRef.current = 0;
       setState("idle");
@@ -198,22 +202,14 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     } catch { /* ignore */ }
   };
 
-  const retry = () => {
-    setState("idle");
-    setErrorMsg("");
-    setMicError("");
-    setStreamWarning("");
-  };
+  const retry = resetToIdle;
 
   const cardBase =
     "rounded-card border flex flex-col items-center justify-center gap-2 py-10 px-4 transition-colors";
 
   if (state === "idle") {
     return (
-      <div
-        className={`${cardBase} relative border-dashed border-separator hover:border-separator hover:bg-fill-tertiary bg-fill-quaternary`}
-        onClick={start}
-      >
+      <div className={`${cardBase} relative border-dashed border-separator bg-fill-quaternary`}>
         {onCancel && (
           <Button
             variant="ghost"
@@ -221,21 +217,24 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
             iconLeft="x"
             aria-label="Cancel"
             className="absolute top-2 right-2 text-label-tertiary hover:bg-fill-tertiary"
-            onClick={(e) => { e.stopPropagation(); onCancel(); }}
+            onClick={onCancel}
           />
         )}
-        <Icon name="waveform" size="lg" className="text-label-tertiary" />
-        <p className="text-body text-label-secondary">Record call</p>
-        <label
-          className="flex items-center gap-2 text-footnote text-label-secondary select-none"
-          onClick={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={start}
+          className="flex flex-col items-center gap-2 rounded-control px-6 py-3 text-label-secondary hover:bg-fill-tertiary hover:text-label-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
         >
+          <Icon name="waveform" size="lg" />
+          <span className="text-body font-medium">Start recording call</span>
+        </button>
+        <label className="flex items-center gap-2 text-footnote text-label-secondary select-none">
           <Checkbox
             size="sm"
             checked={includeMic}
             onCheckedChange={(c) => setIncludeMic(Boolean(c))}
           />
-          Include microphone
+          Include my microphone
         </label>
       </div>
     );
@@ -265,57 +264,19 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
 
   if (state === "recording" || state === "paused") {
     return (
-      <div className={`${cardBase} !items-stretch !gap-3 border-solid border-separator bg-fill-quaternary`}>
-        <div className="w-full flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              state === "recording"
-                ? "bg-status-error animate-pulse"
-                : "bg-status-warning"
-            }`}
-          />
-          <span className="text-callout font-mono tabular-nums text-label-secondary">
-            {formatElapsed(elapsedMs)}
-          </span>
-          {state === "paused" && (
-            <span className="text-footnote text-label-tertiary ml-2">Paused</span>
-          )}
-        </div>
-
-        <RecordingWaveform
-          samples={sysAmp.samples}
-          state={state === "recording" ? "recording" : "paused"}
-          className="h-16"
-        />
-
-        {micError && (
-          <p className="text-footnote text-status-warning">{micError}</p>
-        )}
-
-        {streamWarning && (
-          <p className="text-footnote text-status-error">{streamWarning}</p>
-        )}
-
-        <div className="w-full flex items-center gap-2">
-          {state === "recording" ? (
-            <Button onClick={pause} variant="secondary" size="md" iconLeft="pause" aria-label="Pause" />
-          ) : (
-            <Button onClick={resume} variant="primary" size="md" iconLeft="play">Resume</Button>
-          )}
-          <Button onClick={stop} variant={state === "paused" ? "secondary" : "primary"} size="md" iconLeft="stop">
-            Stop
-          </Button>
-          <Button
-            onClick={discard}
-            variant="ghost"
-            size="md"
-            iconLeft="trash"
-            className="ml-auto hover:bg-status-error/20"
-          >
-            Discard
-          </Button>
-        </div>
-      </div>
+      <CaptureLive
+        live={state === "recording"}
+        elapsedMs={elapsedMs}
+        meters={[
+          { label: "Call audio", samples: sysAmp.samples },
+          ...(micOn ? [{ label: "Your microphone", samples: micAmp.samples }] : []),
+        ]}
+        warning={streamWarning || micError}
+        onStop={stop}
+        onPause={pause}
+        onResume={resume}
+        onDiscard={discard}
+      />
     );
   }
 
@@ -323,7 +284,7 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     return (
       <div className={`${cardBase} border-solid border-separator bg-fill-quaternary`}>
         <span className="spinner" />
-        <p className="text-body text-label-secondary">Mixing tracks…</p>
+        <p className="text-body text-label-secondary">Saving recording…</p>
       </div>
     );
   }
@@ -336,3 +297,4 @@ export default function RecordCallCard({ onPicked, onActiveChange, onCancel }: P
     </div>
   );
 }
+
