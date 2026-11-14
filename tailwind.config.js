@@ -21,9 +21,9 @@ export default {
         "body":        ["0.8125rem",{ lineHeight: "1rem",     fontWeight: "400" }],
         "callout":     ["0.75rem",  { lineHeight: "0.9375rem",fontWeight: "400" }],
         "subheadline": ["0.6875rem",{ lineHeight: "0.875rem", fontWeight: "400" }],
-        "footnote":    ["0.625rem", { lineHeight: "0.8125rem",fontWeight: "400" }],
-        "caption-1":   ["0.625rem", { lineHeight: "0.8125rem",fontWeight: "400" }],
-        "caption-2":   ["0.625rem", { lineHeight: "0.8125rem",fontWeight: "500" }],
+        "footnote":    ["0.6875rem", { lineHeight: "0.875rem",fontWeight: "400" }],
+        "caption-1":   ["0.6875rem", { lineHeight: "0.875rem",fontWeight: "400" }],
+        "caption-2":   ["0.6875rem", { lineHeight: "0.875rem",fontWeight: "500" }],
       },
       colors: {
         // Opaque — `<alpha-value>` supported.

@@ -47,9 +47,13 @@ impl Store {
     }
 }
 
+const ORPHAN_GRACE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
 /// Scan `captures_dir` and delete any files whose paths are NOT present in any
 /// recording's `source_paths`. Safe to call at startup. Returns the number of
 /// files removed. Missing directories are treated as "nothing to clean".
+/// Files younger than `ORPHAN_GRACE` are kept, so a capture that was never
+/// attached to a recording can still be imported by hand.
 pub fn cleanup_orphaned_captures(store: &Store, captures_dir: &Path) -> Result<usize, String> {
     let entries = match std::fs::read_dir(captures_dir) {
         Ok(e) => e,
@@ -78,8 +82,12 @@ pub fn cleanup_orphaned_captures(store: &Store, captures_dir: &Path) -> Result<u
         if !path.is_file() {
             continue;
         }
+        let recent = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age < ORPHAN_GRACE));
         let s = path.to_string_lossy().to_string();
-        if !referenced.contains(&s) {
+        if !recent && !referenced.contains(&s) {
             if std::fs::remove_file(&path).is_ok() {
                 removed += 1;
             }
