@@ -374,6 +374,10 @@ fn cleanup_orphaned_captures_deletes_unreferenced_files() {
     fs::write(&keep, b"k").unwrap();
     fs::write(&drop1, b"d1").unwrap();
     fs::write(&drop2, b"d2").unwrap();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 24 * 60 * 60);
+    for p in [&keep, &drop1, &drop2] {
+        fs::File::options().write(true).open(p).unwrap().set_modified(old).unwrap();
+    }
 
     let mut r = sample_recording("p1");
     r.source_paths = vec![keep.to_string_lossy().to_string()];
